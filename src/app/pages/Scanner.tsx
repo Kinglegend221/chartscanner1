@@ -593,6 +593,9 @@ export default function Scanner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
+  // Force trade mode for testing - set to false for production
+  const FORCE_TRADE_MODE = true;
+
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
@@ -715,6 +718,26 @@ export default function Scanner() {
       }
 
       let analysis: AnalysisResult;
+
+      // 🔥 FORCE TRADE MODE - Override NO TRADE decisions
+      if (FORCE_TRADE_MODE && aiResult && aiResult.decision === "NO TRADE") {
+        console.log('⚠️ FORCE TRADE MODE: Overriding NO TRADE');
+        const forcedDirection = aiResult.market_structure?.includes("Bearish") ? "SELL" : "BUY";
+        aiResult = {
+          ...aiResult,
+          decision: forcedDirection,
+          confidence_percentage: Math.max(aiResult.confidence_percentage || 50, 55),
+          execution: {
+            entry: aiResult.execution?.entry || parseFloat(uploadedImage.match(/(\d+\.?\d*)/)?.[0] || "0"),
+            stop_loss: aiResult.execution?.stop_loss || 0,
+            tp_1: aiResult.execution?.tp_1 || 0,
+            tp_2: aiResult.execution?.tp_2 || 0,
+            tp_3: aiResult.execution?.tp_3 || 0,
+            risk_reward_ratio: aiResult.execution?.risk_reward_ratio || "1:2"
+          },
+          verdict_summary: (aiResult.verdict_summary || "") + " [FORCED TRADE - AI was cautious]"
+        };
+      }
 
       if (aiResult && !aiResult.error) {
         console.log('✅ Using GitHub AI result:', aiResult);
