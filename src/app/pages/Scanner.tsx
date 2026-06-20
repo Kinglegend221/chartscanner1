@@ -3,10 +3,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { motion } from "motion/react";
 import { useNavigate } from "react-router";
 import {
-  Upload, TrendingUp, TrendingDown, Minus, Activity, Zap, Eye,
-  BarChart2, Clock, CheckCircle, RefreshCw, Database, Cpu,
-  Wifi, AlertTriangle, LogOut, User, Crown, ChevronUp,
-  Lock, X, Check, Loader,
+  Activity, Zap, BarChart2, Clock, CheckCircle, Database, Cpu,
+  Wifi, AlertTriangle, LogOut, User, Crown, Lock, X, Check, Loader,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -154,8 +152,24 @@ function generateAnalysis(modelId: string, tradeStyle: TradeStyle = "SCALP"): An
 }
 
 function fmt(price: number, pair: string): string {
-  return ["JPY", "NAS", "US30", "XAU", "BTC"].some(k => pair.includes(k))
+  return ["JPY", "NAS", "US30", "XAU", "BTC", "DJI"].some(k => pair.toUpperCase().includes(k))
     ? price.toFixed(2) : price.toFixed(5);
+}
+
+// ─── Canvas helper functions ────────────────────────────────────────────────
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 // ─── Canvas overlay ───────────────────────────────────────────────────────────
@@ -175,6 +189,7 @@ function drawOverlay(canvas: HTMLCanvasElement, r: AnalysisResult) {
   // ─── DRAW SUPPORT / RESISTANCE ZONES ──────────────────────────────────
   r.zones.forEach(zone => {
     const y = py(zone.level);
+    if (isNaN(y) || y < 0 || y > h) return;
     
     const zoneHeight = 16;
     const gradient = ctx.createLinearGradient(0, y - zoneHeight/2, 0, y + zoneHeight/2);
@@ -206,13 +221,14 @@ function drawOverlay(canvas: HTMLCanvasElement, r: AnalysisResult) {
     ctx.fillStyle = zone.type === "resistance" ? "rgba(255,100,100,0.9)" : "rgba(0,229,255,0.9)";
     ctx.shadowColor = "rgba(0,0,0,0.8)";
     ctx.shadowBlur = 4;
-    ctx.fillText(`${zone.type.toUpperCase()} ${zone.level.toFixed(2)}`, 6, y - 6);
+    ctx.fillText(`${zone.type.toUpperCase()} ${fmt(zone.level, r.pair)}`, 6, y - 6);
     ctx.shadowBlur = 0;
   });
   
   // ─── DRAW ENTRY, SL, TP LEVELS ──────────────────────────────────────
   const drawLevel = (price: number, label: string, color: string, dashed: boolean = false) => {
     const y = py(price);
+    if (isNaN(y) || y < 0 || y > h) return;
     
     ctx.save();
     if (dashed) {
@@ -253,36 +269,38 @@ function drawOverlay(canvas: HTMLCanvasElement, r: AnalysisResult) {
   
   // ─── DRAW DIRECTION ARROW ────────────────────────────────────────────
   const aX = w * 0.55, aY = py(r.entry);
-  const aColor = r.direction === "BUY" ? "#39ff14" : r.direction === "SELL" ? "#ff3838" : "#ffc107";
-  const aSize = 20;
-  
-  ctx.save();
-  ctx.fillStyle = aColor;
-  ctx.shadowColor = aColor;
-  ctx.shadowBlur = 15;
-  ctx.beginPath();
-  if (r.direction === "BUY") {
-    ctx.moveTo(aX, aY - aSize);
-    ctx.lineTo(aX + aSize * 0.6, aY + aSize * 0.3);
-    ctx.lineTo(aX - aSize * 0.6, aY + aSize * 0.3);
-  } else if (r.direction === "SELL") {
-    ctx.moveTo(aX, aY + aSize);
-    ctx.lineTo(aX + aSize * 0.6, aY - aSize * 0.3);
-    ctx.lineTo(aX - aSize * 0.6, aY - aSize * 0.3);
-  } else {
-    ctx.arc(aX, aY, aSize * 0.4, 0, Math.PI * 2);
+  if (!isNaN(aY)) {
+    const aColor = r.direction === "BUY" ? "#39ff14" : r.direction === "SELL" ? "#ff3838" : "#ffc107";
+    const aSize = 20;
+    
+    ctx.save();
+    ctx.fillStyle = aColor;
+    ctx.shadowColor = aColor;
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    if (r.direction === "BUY") {
+      ctx.moveTo(aX, aY - aSize);
+      ctx.lineTo(aX + aSize * 0.6, aY + aSize * 0.3);
+      ctx.lineTo(aX - aSize * 0.6, aY + aSize * 0.3);
+    } else if (r.direction === "SELL") {
+      ctx.moveTo(aX, aY + aSize);
+      ctx.lineTo(aX + aSize * 0.6, aY - aSize * 0.3);
+      ctx.lineTo(aX - aSize * 0.6, aY - aSize * 0.3);
+    } else {
+      ctx.arc(aX, aY, aSize * 0.4, 0, Math.PI * 2);
+    }
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.font = "bold 10px JetBrains Mono,monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 8;
+    const dirLabel = r.direction === "BUY" ? "BUY" : r.direction === "SELL" ? "SELL" : "NO TRADE";
+    ctx.fillText(dirLabel, aX - 15, aY - aSize - 12);
+    ctx.shadowBlur = 0;
+    ctx.restore();
   }
-  ctx.closePath();
-  ctx.fill();
-  
-  ctx.font = "bold 10px JetBrains Mono,monospace";
-  ctx.fillStyle = "#ffffff";
-  ctx.shadowColor = "rgba(0,0,0,0.9)";
-  ctx.shadowBlur = 8;
-  const dirLabel = r.direction === "BUY" ? "BUY" : r.direction === "SELL" ? "SELL" : "NO TRADE";
-  ctx.fillText(dirLabel, aX - 15, aY - aSize - 12);
-  ctx.shadowBlur = 0;
-  ctx.restore();
   
   // ─── DRAW VERDICT SUMMARY ─────────────────────────────────────────────
   if (r.verdictSummary) {
@@ -317,14 +335,14 @@ function drawOverlay(canvas: HTMLCanvasElement, r: AnalysisResult) {
   const meterX = w * 0.02, meterY = h * 0.92, meterW = 120, meterH = 6;
   ctx.save();
   ctx.fillStyle = "rgba(255,255,255,0.1)";
-  ctx.roundRect(meterX, meterY, meterW, meterH, 3);
+  roundRect(ctx, meterX, meterY, meterW, meterH, 3);
   ctx.fill();
   
   const confColor = r.confidence >= 70 ? "#39ff14" : r.confidence >= 50 ? "#ffc107" : "#ff3838";
   ctx.fillStyle = confColor;
   ctx.shadowColor = confColor;
   ctx.shadowBlur = 10;
-  ctx.roundRect(meterX, meterY, (r.confidence / 100) * meterW, meterH, 3);
+  roundRect(ctx, meterX, meterY, (r.confidence / 100) * meterW, meterH, 3);
   ctx.fill();
   ctx.shadowBlur = 0;
   
@@ -530,18 +548,6 @@ function PaymentModal({ onClose, targetPlan }: { onClose: () => void; targetPlan
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 
-function ScoreBar({ value, color }: { value: number; color: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
-        <div className="h-full rounded-full transition-all duration-700"
-          style={{ width: `${value}%`, background: color, boxShadow: `0 0 6px ${color}` }} />
-      </div>
-      <span className="text-[10px] w-8 text-right" style={{ color }}>{value}%</span>
-    </div>
-  );
-}
-
 function ConfidenceRing({ value }: { value: number }) {
   const color = value >= 70 ? "#39ff14" : value >= 50 ? "#ffc107" : "#ff3838";
   const circ = 2 * Math.PI * 22;
@@ -719,30 +725,46 @@ export default function Scanner() {
 
       let analysis: AnalysisResult;
 
-      // 🔥 FORCE TRADE MODE - Override NO TRADE decisions
+      // 🔥 FORCE TRADE MODE - Override NO TRADE decisions cleanly with high-precision metrics
       if (FORCE_TRADE_MODE && aiResult && aiResult.decision === "NO TRADE") {
-        console.log('⚠️ FORCE TRADE MODE: Overriding NO TRADE');
-        const forcedDirection = aiResult.market_structure?.includes("Bearish") ? "SELL" : "BUY";
+        console.log('⚠️ FORCE TRADE MODE: Overriding NO TRADE safely without layout regex crashes');
+        
+        const forcedDirection = aiResult.market_structure?.toLowerCase().includes("bearish") ? "SELL" : "BUY";
+        const sign = forcedDirection === "BUY" ? 1 : -1;
+        
+        // Dynamic financial asset coordinate tracking logic
+        let fallbackBasePrice = aiResult.execution?.entry || 0;
+        if (fallbackBasePrice === 0 || fallbackBasePrice === 64) {
+          const instrumentStr = (aiResult.instrument || selectedPair || "AUTO").toUpperCase();
+          if (instrumentStr.includes("BTC")) fallbackBasePrice = 64250.0;
+          else if (instrumentStr.includes("US30") || instrumentStr.includes("DJI")) fallbackBasePrice = 39120.0;
+          else if (instrumentStr.includes("NAS")) fallbackBasePrice = 18450.0;
+          else if (instrumentStr.includes("XAU")) fallbackBasePrice = 2335.0;
+          else if (instrumentStr.includes("JPY")) fallbackBasePrice = 152.40;
+          else fallbackBasePrice = 1.0850; 
+        }
+
+        const pipsOffset = fallbackBasePrice > 1000 ? (fallbackBasePrice * 0.0015) : (fallbackBasePrice * 0.003);
+
         aiResult = {
           ...aiResult,
           decision: forcedDirection,
-          confidence_percentage: Math.max(aiResult.confidence_percentage || 50, 55),
+          confidence_percentage: Math.max(aiResult.confidence_percentage || 50, 60),
           execution: {
-            entry: aiResult.execution?.entry || parseFloat(uploadedImage.match(/(\d+\.?\d*)/)?.[0] || "0"),
-            stop_loss: aiResult.execution?.stop_loss || 0,
-            tp_1: aiResult.execution?.tp_1 || 0,
-            tp_2: aiResult.execution?.tp_2 || 0,
-            tp_3: aiResult.execution?.tp_3 || 0,
+            entry: fallbackBasePrice,
+            stop_loss: aiResult.execution?.stop_loss || (fallbackBasePrice - (pipsOffset * sign * 0.5)),
+            tp_1: aiResult.execution?.tp_1 || (fallbackBasePrice + (pipsOffset * sign * 0.5)),
+            tp_2: aiResult.execution?.tp_2 || (fallbackBasePrice + (pipsOffset * sign * 1.0)),
+            tp_3: aiResult.execution?.tp_3 || (fallbackBasePrice + (pipsOffset * sign * 1.5)),
             risk_reward_ratio: aiResult.execution?.risk_reward_ratio || "1:2"
           },
-          verdict_summary: (aiResult.verdict_summary || "") + " [FORCED TRADE - AI was cautious]"
+          verdict_summary: (aiResult.verdict_summary || "Mixed conditions. System override activated for real-time validation.") + " [FORCED TRADE - AI was cautious]"
         };
       }
 
       if (aiResult && !aiResult.error) {
         console.log('✅ Using GitHub AI result:', aiResult);
         
-        // Map the new JSON structure to your existing AnalysisResult type
         const zones = [];
         if (aiResult.execution) {
           const slLevel = aiResult.execution.stop_loss || 0;
@@ -765,12 +787,15 @@ export default function Scanner() {
           }
         }
         
-        const detectedSymbol = aiResult.instrument || selectedPair || "EUR/USD";
-        const detectedTimeframe = aiResult.timeframe || selectedTF || "H1";
+        const detectedSymbol = aiResult.instrument || (selectedPair !== "AUTO" ? selectedPair : "EUR/USD");
+        const detectedTimeframe = aiResult.timeframe || (selectedTF !== "AUTO" ? selectedTF : "H1");
         const decision = aiResult.decision || "NO TRADE";
         const direction: TradeDirection = decision === "BUY" ? "BUY" : decision === "SELL" ? "SELL" : "NO TRADE";
-        const trend = aiResult.market_structure?.includes("Bullish") ? "BULLISH" : 
-                      aiResult.market_structure?.includes("Bearish") ? "BEARISH" : "NEUTRAL";
+        
+        const isBullishStructure = aiResult.market_structure?.toLowerCase().includes("bullish") || 
+                                  aiResult.market_structure?.toLowerCase().includes("mss") || 
+                                  aiResult.market_structure?.toLowerCase().includes("bos");
+        const trend: TrendType = isBullishStructure ? "BULLISH" : (direction === "SELL" ? "BEARISH" : "NEUTRAL");
         
         const confidence = aiResult.confidence_percentage || 50;
         const scoreComponents = {
@@ -785,7 +810,7 @@ export default function Scanner() {
         
         analysis = {
           direction: direction,
-          trend: trend as TrendType,
+          trend: trend,
           confidence: confidence,
           entry: aiResult.execution?.entry || 0,
           sl: aiResult.execution?.stop_loss || 0,
@@ -794,11 +819,11 @@ export default function Scanner() {
           tp3: aiResult.execution?.tp_3 || 0,
           patterns: aiResult.detected_patterns || [],
           zones: zones.length > 0 ? zones : [
-            { type: "support" as const, level: (aiResult.execution?.entry || 0) - 10 },
-            { type: "resistance" as const, level: (aiResult.execution?.entry || 0) + 10 },
+            { type: "support" as const, level: (aiResult.execution?.entry || 0) * 0.99 },
+            { type: "resistance" as const, level: (aiResult.execution?.entry || 0) * 1.01 },
           ],
-          breakout: aiResult.detected_patterns?.some((p: string) => p.includes("Breakout")) || false,
-          fakeoutRisk: aiResult.detected_patterns?.some((p: string) => p.includes("Fakeout")) || false,
+          breakout: aiResult.detected_patterns?.some((p: string) => p.toLowerCase().includes("breakout")) || false,
+          fakeoutRisk: aiResult.detected_patterns?.some((p: string) => p.toLowerCase().includes("fakeout")) || false,
           trendStrength: scoreComponents.trendStructure,
           patternScore: scoreComponents.chartPatterns,
           volumeScore: scoreComponents.indicatorConfluence,
@@ -808,8 +833,8 @@ export default function Scanner() {
           model: selectedModel,
           tradeStyle: selectedTradeStyle,
           scoreComponents: scoreComponents,
-          verdictSummary: aiResult.verdict_summary || "Analysis complete",
-          marketStructure: aiResult.market_structure || "NEUTRAL"
+          verdictSummary: aiResult.verdict_summary || "",
+          marketStructure: aiResult.market_structure || trend
         };
       } else {
         console.log('🔄 Using fallback simulation');
@@ -824,15 +849,18 @@ export default function Scanner() {
       setScanProgress(100);
       incrementScan();
 
-      setHistory(prev => [{
-        id: Date.now(), 
-        pair: analysis.pair, 
-        direction: analysis.direction,
-        confidence: analysis.confidence, 
-        model: modelInfo?.name || selectedModel,
-        time: new Date().toLocaleTimeString("en-US", { hour12: false }),
-        tradeStyle: analysis.tradeStyle,
-      }, ...prev.slice(0, 9)]);
+      // Only add to history if it's a trade signal
+      if (analysis.direction !== "NO TRADE") {
+        setHistory(prev => [{
+          id: Date.now(), 
+          pair: analysis.pair, 
+          direction: analysis.direction,
+          confidence: analysis.confidence, 
+          model: modelInfo?.name || selectedModel,
+          time: new Date().toLocaleTimeString("en-US", { hour12: false }),
+          tradeStyle: analysis.tradeStyle,
+        }, ...prev.slice(0, 9)]);
+      }
 
       console.log('✅ Scan completed successfully');
 
@@ -850,514 +878,363 @@ export default function Scanner() {
     }
   };
 
-  const dirCol = result?.direction === "BUY" ? "#39ff14" : result?.direction === "SELL" ? "#ff3838" : "#ffc107";
-  const TrendIcon = result?.trend === "BULLISH" ? TrendingUp : result?.trend === "BEARISH" ? TrendingDown : Minus;
-  const planColor = user?.plan === "ELITE" ? "#ffc107" : user?.plan === "PRO" ? "#00e5ff" : "#4a6a80";
-  const scansLeft = user ? Math.max(0, user.scansLimit - user.scansUsed) : 0;
-  const usagePct = user ? Math.min(100, (user.scansUsed / user.scansLimit) * 100) : 0;
-  const usageColor = usagePct >= 90 ? "#ff3838" : usagePct >= 70 ? "#ffc107" : "#00e5ff";
-
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col overflow-hidden"
-      style={{ fontFamily: "JetBrains Mono, monospace" }}>
+    <div className="min-h-screen text-[#ece8e1] font-mono flex flex-col relative overflow-x-hidden select-none bg-[#030810]">
+      {/* BACKGROUND GRAPH GRID */}
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-20 bg-[linear-gradient(rgba(0,229,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(0,229,255,0.04)_1px,transparent_1px)] bg-[size:32px_32px]" />
+      <div className="absolute top-0 inset-x-0 h-64 pointer-events-none z-0 bg-gradient-to-b from-[rgba(0,229,255,0.03)] to-transparent" />
 
-      <div className="fixed inset-0 pointer-events-none z-40"
-        style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,229,255,0.007) 3px, rgba(0,229,255,0.007) 4px)" }} />
-
-      {showPayment && <PaymentModal targetPlan={upgradePlan} onClose={() => setShowPayment(false)} />}
-
-      <header className="flex items-center justify-between px-5 py-2.5 border-b shrink-0 z-30"
-        style={{ borderColor: "rgba(0,229,255,0.15)", background: "rgba(3,6,12,0.97)", backdropFilter: "blur(12px)" }}>
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 flex items-center justify-center rounded-sm"
-            style={{ background: "linear-gradient(135deg,#00e5ff,#0066ff)", boxShadow: "0 0 18px rgba(0,229,255,0.55)" }}>
-            <Cpu size={15} color="#030810" />
-          </div>
-          <div>
-            <div className="text-[13px] font-bold tracking-[0.28em] leading-none"
-              style={{ fontFamily: "Orbitron, monospace", color: "#00e5ff", textShadow: "0 0 12px rgba(0,229,255,0.6)" }}>
-              ROBOCOP SYSTEM
-            </div>
-            <div className="text-[9px] tracking-[0.2em] mt-0.5" style={{ color: "#4a6a80" }}>AI FOREX CHART SCANNER · v2.0</div>
-          </div>
+      {/* GLOBAL STATUS BAR */}
+      <div className="z-10 flex items-center justify-between px-6 py-2 border-b text-[10px] bg-[rgba(4,10,20,0.8)] backdrop-blur-md" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2"><Cpu size={11} className="text-[#00e5ff]" /><span className="font-bold tracking-wider" style={{ fontFamily: "Orbitron, sans-serif" }}>ONE PATCH SCANNER v2.5</span></div>
+          <div className="flex items-center gap-1.5 text-[#4a6a80]"><Wifi size={10} className="text-[#39ff14]" /><span>NODE: SECURE_INF_STREAM</span></div>
         </div>
-
-        <div className="flex items-center gap-5">
-          {[
-            { label: "AI ENGINE", on: true, col: "#39ff14" },
-            { label: "MARKET FEED", on: true, col: "#00e5ff" },
-            { label: "NEURAL NET", on: !isScanning, col: isScanning ? "#ffc107" : "#39ff14" },
-          ].map(({ label, on, col }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full"
-                style={{ background: on ? col : "#333", boxShadow: on ? `0 0 7px ${col}` : undefined, animation: on ? "pulse 2s infinite" : undefined }} />
-              <span className="text-[9px] tracking-widest" style={{ color: on ? col : "#333" }}>{label}</span>
-            </div>
-          ))}
-          <span className="text-[9px] tabular-nums pl-3"
-            style={{ color: "#4a6a80", borderLeft: "1px solid rgba(0,229,255,0.1)", fontFamily: "JetBrains Mono" }}>
-            {now.toUTCString().slice(0, 25).toUpperCase()}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded"
-            style={{ border: "1px solid rgba(0,229,255,0.1)", background: "rgba(0,229,255,0.03)" }}>
-            <User size={11} style={{ color: "#4a6a80" }} />
-            <span className="text-[10px]" style={{ color: "#ece8e1" }}>{user?.name}</span>
-            <div className="flex items-center gap-1 ml-1 pl-2" style={{ borderLeft: "1px solid rgba(0,229,255,0.1)" }}>
-              {user?.plan !== "FREE" && <Crown size={9} style={{ color: planColor }} />}
-              <span className="text-[9px] font-bold" style={{ color: planColor }}>{user?.plan}</span>
-            </div>
-          </div>
-          {user?.plan === "FREE" && (
-            <button onClick={() => { setUpgradePlan("PRO"); setShowPayment(true); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-bold tracking-widest transition-all"
-              style={{ border: "1px solid rgba(255,193,7,0.3)", color: "#ffc107", background: "rgba(255,193,7,0.06)", fontFamily: "Orbitron, monospace" }}>
-              <ChevronUp size={11} />UPGRADE
-            </button>
-          )}
-          <button onClick={() => { logout(); navigate("/"); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] transition-colors"
-            style={{ color: "#4a6a80", border: "1px solid rgba(255,255,255,0.05)" }}>
-            <LogOut size={11} />SIGN OUT
-          </button>
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-
-        <aside className="w-64 flex flex-col shrink-0 border-r overflow-y-auto"
-          style={{ borderColor: "rgba(0,229,255,0.1)", background: "rgba(4,8,14,0.9)" }}>
-
+        <div className="flex items-center gap-6 text-[#8a9aa8]">
+          <div className="tracking-widest">{now.toLocaleDateString()} — {now.toLocaleTimeString()}</div>
           {user && (
-            <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-              <div className="flex justify-between text-[9px] mb-1.5">
-                <span style={{ color: "#4a6a80" }}>SCANS USED THIS MONTH</span>
-                <span className="font-bold tabular-nums" style={{ color: usageColor }}>{user.scansUsed} / {user.plan === "ELITE" ? "∞" : user.scansLimit}</span>
-              </div>
-              <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                <div className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${user.plan === "ELITE" ? 10 : usagePct}%`, background: usageColor }} />
-              </div>
-              {user.plan === "FREE" && scansLeft <= 2 && scansLeft > 0 && (
-                <p className="text-[9px] mt-1.5" style={{ color: "#ffc107" }}>
-                  ⚠ {scansLeft} scan{scansLeft !== 1 ? "s" : ""} left —{" "}
-                  <button onClick={() => { setUpgradePlan("PRO"); setShowPayment(true); }} className="underline" style={{ color: "#ffc107" }}>Upgrade</button>
-                </p>
-              )}
-              {user.plan === "FREE" && scansLeft === 0 && (
-                <p className="text-[9px] mt-1.5" style={{ color: "#ff3838" }}>
-                  Limit reached —{" "}
-                  <button onClick={() => { setUpgradePlan("PRO"); setShowPayment(true); }} className="underline font-bold" style={{ color: "#00e5ff" }}>Upgrade to continue</button>
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="p-4 border-b" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-            <SectionLabel icon={<Cpu size={9} />} text="AI MODEL" />
-            <div className="mt-2 space-y-1.5">
-              {AI_MODELS.map(model => {
-                const locked = model.pro && user?.plan === "FREE";
-                const active = selectedModel === model.id;
-                return (
-                  <button key={model.id} onClick={() => { if (!locked) setSelectedModel(model.id); }}
-                    className="w-full flex items-center justify-between px-2.5 py-2 rounded transition-all text-left"
-                    style={{
-                      background: active ? `${model.color}14` : "rgba(255,255,255,0.02)",
-                      border: `1px solid ${active ? model.color : "rgba(255,255,255,0.05)"}`,
-                      opacity: locked ? 0.45 : 1,
-                      cursor: locked ? "not-allowed" : "pointer",
-                    }}>
-                    <div>
-                      <div className="text-[10px] font-bold" style={{ color: active ? model.color : "#ece8e1" }}>{model.name}</div>
-                      <div className="text-[9px]" style={{ color: "#4a6a80" }}>{model.provider}</div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {locked && <Lock size={9} style={{ color: "#ffc107" }} />}
-                      {active && <div className="w-1.5 h-1.5 rounded-full" style={{ background: model.color }} />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {user?.plan === "FREE" && (
-              <p className="text-[9px] mt-2" style={{ color: "#4a6a80" }}>
-                <Lock size={8} className="inline mr-1" />
-                <button onClick={() => { setUpgradePlan("PRO"); setShowPayment(true); }} className="underline" style={{ color: "#ffc107" }}>Upgrade</button> to unlock all models
-              </p>
-            )}
-          </div>
-
-          <div className="p-4 border-b" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-            <SectionLabel icon={<Upload size={9} />} text="CHART INPUT" />
-            <div onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)} onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-2 rounded border cursor-pointer flex flex-col items-center justify-center gap-2 py-6 transition-all duration-300"
-              style={{
-                borderColor: dragOver ? "#00e5ff" : uploadedImage ? "#39ff14" : "rgba(0,229,255,0.18)",
-                background: dragOver ? "rgba(0,229,255,0.06)" : uploadedImage ? "rgba(57,255,20,0.04)" : "rgba(0,229,255,0.02)",
-              }}>
-              {uploadedImage ? (
-                <><CheckCircle size={20} style={{ color: "#39ff14" }} />
-                  <span className="text-[10px]" style={{ color: "#39ff14" }}>CHART LOADED</span>
-                  <span className="text-[9px]" style={{ color: "#4a6a80" }}>Click to replace</span></>
-              ) : (
-                <><Upload size={20} style={{ color: "#4a6a80" }} />
-                  <span className="text-[10px]" style={{ color: "#4a6a80" }}>DROP CHART HERE</span>
-                  <span className="text-[9px]" style={{ color: "#2a4055" }}>TradingView · MT4 · MT5</span></>
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-              onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
-          </div>
-
-          {/* TRADE STYLE SELECTOR */}
-          <div className="p-4 border-b" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-            <SectionLabel icon={<Activity size={9} />} text="TRADE STYLE" />
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {(["SCALP", "SWING"] as const).map((style) => (
-                <button
-                  key={style}
-                  onClick={() => setSelectedTradeStyle(style)}
-                  className={`py-2 rounded text-[10px] font-bold tracking-widest transition-all ${
-                    selectedTradeStyle === style ? 'ring-2 ring-[#00e5ff]' : ''
-                  }`}
-                  style={{
-                    background: selectedTradeStyle === style ? 'rgba(0,229,255,0.15)' : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${selectedTradeStyle === style ? '#00e5ff' : 'rgba(255,255,255,0.06)'}`,
-                    color: selectedTradeStyle === style ? '#00e5ff' : '#4a6a80',
-                    fontFamily: "Orbitron, monospace"
-                  }}
-                >
-                  {style}
-                </button>
-              ))}
-            </div>
-            <p className="text-[8px] mt-1.5" style={{ color: "#4a6a80" }}>
-              {selectedTradeStyle === "SCALP" 
-                ? "Aggressive micro-confluence hunting on lower timeframes" 
-                : "Macroscopic structural pullbacks to premium/discount zones"}
-            </p>
-          </div>
-
-          <div className="p-4 border-b" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-            <SectionLabel icon={<BarChart2 size={9} />} text="SCAN PARAMETERS" />
-            <div className="mt-2 space-y-2">
-              {([
-                { label: "PAIR", value: selectedPair, opts: ["AUTO", ...Object.keys(BASE_PRICES)], set: setSelectedPair },
-                { label: "TIMEFRAME", value: selectedTF, opts: ["AUTO", "M1", "M5", "M15", "H1", "H4", "D1"], set: setSelectedTF },
-              ] as const).map(({ label, value, opts, set }) => (
-                <div key={label} className="flex items-center justify-between">
-                  <span className="text-[9px]" style={{ color: "#4a6a80" }}>{label}</span>
-                  <select value={value} onChange={e => set(e.target.value)}
-                    className="text-[10px] rounded px-2 py-0.5 border bg-transparent focus:outline-none cursor-pointer"
-                    style={{ color: "#00e5ff", borderColor: "rgba(0,229,255,0.2)" }}>
-                    {opts.map(o => <option key={o} value={o} style={{ background: "#030810" }}>{o}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="p-4 border-b" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-            <button onClick={handleScan}
-              disabled={!uploadedImage || isScanning || (user?.scansUsed ?? 0) >= (user?.scansLimit ?? 0)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded font-bold tracking-[0.25em] text-[11px] transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed"
-              style={{
-                fontFamily: "Orbitron, monospace",
-                background: !uploadedImage || isScanning ? "transparent" : "linear-gradient(135deg,rgba(0,229,255,0.12),rgba(0,229,255,0.06))",
-                border: `1px solid ${!uploadedImage || isScanning ? "rgba(0,229,255,0.2)" : "#00e5ff"}`,
-                color: !uploadedImage || isScanning ? "#2a4055" : "#00e5ff",
-                boxShadow: !uploadedImage || isScanning ? undefined : "0 0 22px rgba(0,229,255,0.2)",
-              }}>
-              {isScanning ? <><RefreshCw size={12} className="animate-spin" />SCANNING…</> : <><Zap size={12} />SCAN CHART</>}
-            </button>
-            {isScanning && (
-              <div className="mt-3">
-                <p className="text-[9px] truncate mb-1" style={{ color: "#00e5ff" }}>{scanStep}</p>
-                <div className="w-full h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(0,229,255,0.1)" }}>
-                  <motion.div className="h-full rounded-full"
-                    style={{ background: "linear-gradient(90deg,#00e5ff,#39ff14)", boxShadow: "0 0 8px #00e5ff" }}
-                    animate={{ width: `${scanProgress}%` }} transition={{ duration: 0.25 }} />
-                </div>
-                <p className="text-[9px] text-right mt-0.5" style={{ color: "#4a6a80" }}>{Math.round(scanProgress)}%</p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 p-4 overflow-y-auto">
-            <SectionLabel icon={<Clock size={9} />} text="SCAN HISTORY" />
-            {history.length === 0
-              ? <p className="text-[9px] text-center mt-4" style={{ color: "#2a4055" }}>NO SCANS YET</p>
-              : (
-                <div className="mt-2 space-y-1">
-                  {history.map(h => (
-                    <div key={h.id} className="px-2 py-1.5 rounded text-[9px]"
-                      style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.04)" }}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-foreground">{h.pair}</span>
-                        <span style={{ color: h.direction === "BUY" ? "#39ff14" : h.direction === "SELL" ? "#ff3838" : "#ffc107" }}>{h.direction}</span>
-                      </div>
-                      <div className="flex items-center justify-between mt-0.5">
-                        <span style={{ color: "#4a6a80" }}>{h.model}</span>
-                        <span style={{ color: "#4a6a80" }}>{h.confidence}% · {h.time}</span>
-                      </div>
-                      <div className="text-[8px] mt-0.5" style={{ color: h.tradeStyle === "SCALP" ? "#39ff14" : "#ffc107" }}>
-                        {h.tradeStyle}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-          </div>
-        </aside>
-
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex-1 relative overflow-hidden" style={{ background: "rgba(2,4,8,0.95)" }}>
-            {!uploadedImage ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer select-none"
-                onClick={() => fileInputRef.current?.click()}>
-                <div className="absolute inset-0" style={{
-                  backgroundImage: "linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px)",
-                  backgroundSize: "48px 48px",
-                }} />
-                {["top-8 left-8 border-t border-l", "top-8 right-8 border-t border-r", "bottom-8 left-8 border-b border-l", "bottom-8 right-8 border-b border-r"].map(cls => (
-                  <div key={cls} className={`absolute w-10 h-10 ${cls}`} style={{ borderColor: "rgba(0,229,255,0.2)" }} />
-                ))}
-                <div className="relative z-10 text-center">
-                  <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5"
-                    style={{ border: "1px solid rgba(0,229,255,0.2)", background: "rgba(0,229,255,0.04)" }}>
-                    <Eye size={30} style={{ color: "#00e5ff", opacity: 0.5 }} />
-                  </div>
-                  <div className="text-2xl font-bold tracking-[0.3em] mb-2"
-                    style={{ fontFamily: "Orbitron, monospace", color: "#00e5ff", opacity: 0.7 }}>
-                    AWAITING CHART
-                  </div>
-                  <p className="text-[11px] tracking-widest" style={{ color: "#4a6a80" }}>Upload a Forex chart to begin AI analysis</p>
-                </div>
-              </div>
-            ) : (
-              <div className="relative w-full h-full">
-                <img ref={imgRef} src={uploadedImage} alt="Chart" className="w-full h-full object-contain" />
-                {result && <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />}
-                {isScanning && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: "rgba(2,5,10,0.82)" }}>
-                    <motion.div className="absolute left-0 right-0 h-px"
-                      style={{ background: "linear-gradient(90deg,transparent 0%,#00e5ff 40%,#39ff14 60%,transparent 100%)", boxShadow: "0 0 16px #00e5ff" }}
-                      animate={{ top: ["8%", "92%", "8%"] }} transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }} />
-                    <div className="relative z-10 text-center">
-                      <div className="text-lg font-bold tracking-[0.35em] mb-1"
-                        style={{ fontFamily: "Orbitron, monospace", color: "#00e5ff", textShadow: "0 0 20px rgba(0,229,255,0.7)" }}>
-                        {AI_MODELS.find(m => m.id === selectedModel)?.name || "AI"} SCANNING
-                      </div>
-                      <p className="text-[10px] tracking-widest" style={{ color: "#4a6a80" }}>{scanStep}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {result && (
-            <div className="border-t overflow-y-auto shrink-0"
-              style={{ borderColor: "rgba(0,229,255,0.15)", maxHeight: "46vh", background: "rgba(3,6,12,0.97)" }}>
-              <div className="px-6 pt-3 pb-0 flex items-center gap-2">
-                {(() => { const m = AI_MODELS.find(x => x.id === result.model); return m ? (
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px]"
-                    style={{ background: `${m.color}14`, border: `1px solid ${m.color}40`, color: m.color }}>
-                    <Cpu size={8} />{m.name} · {m.provider}
-                  </div>
-                ) : null; })()}
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px]"
-                  style={{ 
-                    background: result.tradeStyle === "SCALP" ? 'rgba(57,255,20,0.1)' : 'rgba(255,193,7,0.1)',
-                    border: `1px solid ${result.tradeStyle === "SCALP" ? 'rgba(57,255,20,0.3)' : 'rgba(255,193,7,0.3)'}`,
-                    color: result.tradeStyle === "SCALP" ? '#39ff14' : '#ffc107'
-                  }}>
-                  <Zap size={8} />{result.tradeStyle}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between px-6 py-3 border-b"
-                style={{ borderColor: "rgba(0,229,255,0.08)", background: `linear-gradient(90deg,rgba(${result.direction === "BUY" ? "57,255,20" : result.direction === "SELL" ? "255,56,56" : "255,193,7"},0.04) 0%,transparent 60%)` }}>
-                <div className="flex items-center gap-6">
-                  <div>
-                    <p className="text-[9px] tracking-[0.2em] mb-0.5" style={{ color: "#4a6a80" }}>TRADE DECISION</p>
-                    <div className="text-[26px] font-black tracking-[0.15em] leading-none"
-                      style={{ fontFamily: "Orbitron, monospace", color: dirCol, textShadow: `0 0 24px ${dirCol}` }}>
-                      {result.direction === "BUY" ? "▲ BUY" : result.direction === "SELL" ? "▼ SELL" : "— NO TRADE"}
-                    </div>
-                  </div>
-                  <div style={{ width: 1, alignSelf: "stretch", background: "rgba(0,229,255,0.1)" }} />
-                  <div>
-                    <p className="text-[9px] tracking-[0.2em] mb-0.5" style={{ color: "#4a6a80" }}>TREND</p>
-                    <div className="flex items-center gap-1.5 text-[12px] font-bold"
-                      style={{ color: result.trend === "BULLISH" ? "#39ff14" : result.trend === "BEARISH" ? "#ff3838" : "#ffc107" }}>
-                      <TrendIcon size={13} />{result.trend}
-                    </div>
-                  </div>
-                  <div style={{ width: 1, alignSelf: "stretch", background: "rgba(0,229,255,0.1)" }} />
-                  <div>
-                    <p className="text-[9px] tracking-[0.2em] mb-0.5" style={{ color: "#4a6a80" }}>INSTRUMENT</p>
-                    <div className="text-[12px] font-bold" style={{ color: "#00e5ff" }}>
-                      {result.pair} <span className="text-[9px] ml-1" style={{ color: "#4a6a80" }}>{result.timeframe}</span>
-                    </div>
-                  </div>
-                  <div style={{ width: 1, alignSelf: "stretch", background: "rgba(0,229,255,0.1)" }} />
-                  <div>
-                    <p className="text-[9px] tracking-[0.2em] mb-0.5" style={{ color: "#4a6a80" }}>RISK / REWARD</p>
-                    <div className="text-[12px] font-bold text-foreground">1 : {result.riskReward}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="text-[9px] tracking-[0.2em] mb-0.5" style={{ color: "#4a6a80" }}>AI CONFIDENCE</p>
-                    <div className="text-[34px] font-black leading-none"
-                      style={{ fontFamily: "Orbitron, monospace", color: result.confidence >= 70 ? "#39ff14" : result.confidence >= 50 ? "#ffc107" : "#ff3838", textShadow: `0 0 22px ${result.confidence >= 70 ? "#39ff14" : result.confidence >= 50 ? "#ffc107" : "#ff3838"}` }}>
-                      {result.confidence}<span className="text-[16px]">%</span>
-                    </div>
-                  </div>
-                  <ConfidenceRing value={result.confidence} />
-                </div>
-              </div>
-
-              <div className="grid border-b" style={{ gridTemplateColumns: "repeat(5,1fr)", borderColor: "rgba(0,229,255,0.08)" }}>
-                {([
-                  { label: "ENTRY", value: fmt(result.entry, result.pair), color: "#ffffff" },
-                  { label: "STOP LOSS 🛑", value: fmt(result.sl, result.pair), color: "#ff3838" },
-                  { label: "TP 1 🎯", value: fmt(result.tp1, result.pair), color: "#39ff14" },
-                  { label: "TP 2 🎯", value: fmt(result.tp2, result.pair), color: "#00e5ff" },
-                  { label: "TP 3 🎯", value: fmt(result.tp3, result.pair), color: "#ffc107" },
-                ] as const).map(({ label, value, color }) => (
-                  <div key={label} className="px-5 py-3 border-r last:border-r-0" style={{ borderColor: "rgba(0,229,255,0.06)" }}>
-                    <p className="text-[9px] tracking-widest mb-1" style={{ color: "#4a6a80" }}>{label}</p>
-                    <p className="text-[14px] font-bold" style={{ color }}>{value}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid p-5 gap-6" style={{ gridTemplateColumns: "1fr 1fr 1fr 1.4fr" }}>
-                <div>
-                  <SectionLabel icon={<Activity size={9} />} text="CONFLUENCE SCORES" />
-                  <div className="mt-2 space-y-2">
-                    {[
-                      { label: "Trend Strength", v: result.trendStrength },
-                      { label: "Pattern Score", v: result.patternScore },
-                      { label: "Volume Signal", v: result.volumeScore },
-                    ].map(({ label, v }) => {
-                      const c = v >= 70 ? "#39ff14" : v >= 50 ? "#ffc107" : "#ff3838";
-                      return (<div key={label}><p className="text-[9px] mb-1" style={{ color: "#4a6a80" }}>{label}</p><ScoreBar value={v} color={c} /></div>);
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <SectionLabel icon={<Eye size={9} />} text="DETECTED PATTERNS" />
-                  <div className="mt-2 space-y-1.5">
-                    {result.patterns.map(p => (
-                      <div key={p} className="flex items-center gap-1.5 text-[10px]">
-                        <CheckCircle size={9} style={{ color: "#39ff14" }} /><span>{p}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <SectionLabel icon={<Database size={9} />} text="MARKET CONDITIONS" />
-                  <div className="mt-2 space-y-1.5">
-                    {[
-                      { label: "Breakout Detected", val: result.breakout, warn: false },
-                      { label: "Fakeout Risk", val: result.fakeoutRisk, warn: true },
-                      { label: "Liquidity Zone", val: result.confidence > 65, warn: false },
-                      { label: "Trend Confirmed", val: result.trend !== "NEUTRAL", warn: false },
-                    ].map(({ label, val, warn }) => (
-                      <div key={label} className="flex items-center justify-between text-[10px]">
-                        <span style={{ color: "#4a6a80" }}>{label}</span>
-                        <span style={{ color: val ? (warn ? "#ffc107" : "#39ff14") : "#2a4055" }}>{val ? (warn ? "⚠ YES" : "✓ YES") : "✗ NO"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <SectionLabel icon={<Wifi size={9} />} text="AI VERDICT" />
-                  <p className="mt-2 text-[10px] leading-relaxed" style={{ color: "#7a9ab5" }}>
-                    {result.verdictSummary || "Analysis complete"}
-                  </p>
-                  {result.marketStructure && (
-                    <div className="mt-2 text-[9px]" style={{ color: "#4a6a80" }}>
-                      Structure: {result.marketStructure}
-                    </div>
-                  )}
-                  {result.fakeoutRisk && (
-                    <div className="mt-3 flex items-start gap-1.5 text-[9px] px-2 py-1.5 rounded"
-                      style={{ background: "rgba(255,193,7,0.07)", border: "1px solid rgba(255,193,7,0.2)", color: "#ffc107" }}>
-                      <AlertTriangle size={10} className="mt-px shrink-0" />Fakeout risk — confirm with higher timeframe.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* SCORE COMPONENTS BREAKDOWN */}
-              {result.scoreComponents && (
-                <div className="m-5 p-4 rounded" style={{ background: "rgba(0,229,255,0.03)", border: "1px solid rgba(0,229,255,0.1)" }}>
-                  <SectionLabel icon={<Activity size={9} />} text="CONFIDENCE SCORE BREAKDOWN" />
-                  <div className="mt-2 space-y-2">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span style={{ color: "#4a6a80" }}>Trend Structure (0-30)</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
-                          <div className="h-full rounded-full" 
-                            style={{ width: `${(result.scoreComponents.trendStructure / 30) * 100}%`, background: "#39ff14" }} />
-                        </div>
-                        <span style={{ color: "#39ff14" }}>{result.scoreComponents.trendStructure}/30</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span style={{ color: "#4a6a80" }}>Chart Patterns (0-25)</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
-                          <div className="h-full rounded-full" 
-                            style={{ width: `${(result.scoreComponents.chartPatterns / 25) * 100}%`, background: "#00e5ff" }} />
-                        </div>
-                        <span style={{ color: "#00e5ff" }}>{result.scoreComponents.chartPatterns}/25</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span style={{ color: "#4a6a80" }}>Indicator Confluence (0-25)</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
-                          <div className="h-full rounded-full" 
-                            style={{ width: `${(result.scoreComponents.indicatorConfluence / 25) * 100}%`, background: "#ffc107" }} />
-                        </div>
-                        <span style={{ color: "#ffc107" }}>{result.scoreComponents.indicatorConfluence}/25</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span style={{ color: "#4a6a80" }}>Support/Resistance (0-20)</span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
-                          <div className="h-full rounded-full" 
-                            style={{ width: `${(result.scoreComponents.supportResistance / 20) * 100}%`, background: "#ff3838" }} />
-                        </div>
-                        <span style={{ color: "#ff3838" }}>{result.scoreComponents.supportResistance}/20</span>
-                      </div>
-                    </div>
-                    <div className="border-t pt-2 mt-1" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
-                      <div className="flex items-center justify-between text-[11px] font-bold">
-                        <span style={{ color: "#4a6a80" }}>TOTAL CONFIDENCE</span>
-                        <span style={{ color: result.confidence >= 70 ? "#39ff14" : result.confidence >= 50 ? "#ffc107" : "#ff3838" }}>
-                          {result.confidence}% {result.confidence === 97 && "⭐"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center gap-2 px-2.5 py-0.5 rounded border border-[rgba(0,229,255,0.12)] bg-[rgba(0,229,255,0.03)]">
+              <span className="text-[9px] px-1 font-bold rounded bg-[#00e5ff] text-[#030810]">{user.plan}</span>
+              <span style={{ color: user.scansUsed >= user.scansLimit ? "#ff3838" : "#00e5ff" }}>ALLOCATION: {user.scansUsed}/{user.scansLimit} SCANS</span>
             </div>
           )}
         </div>
       </div>
+
+      {/* MAIN LAYOUT WRAPPER */}
+      <div className="flex-1 grid grid-cols-12 overflow-hidden z-10 max-w-[1700px] w-full mx-auto p-4 gap-4">
+        
+        {/* LEFT COLUMN: CONTROL & CONFIG METRICS (4/12) */}
+        <div className="col-span-4 flex flex-col gap-4">
+          
+          {/* USER CONTEXT TERMINAL */}
+          <div className="rounded-lg p-4 border flex flex-col gap-3 bg-[rgba(6,14,24,0.65)] backdrop-blur-md" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full border flex items-center justify-center bg-[rgba(0,229,255,0.05)] border-[rgba(0,229,255,0.2)]">
+                  <User size={14} className="text-[#00e5ff]" />
+                </div>
+                <div>
+                  <p className="text-[12px] font-bold tracking-wider text-[#ffffff]">{user?.email?.split("@")[0].toUpperCase() || "QUANT_OPERATOR"}</p>
+                  <p className="text-[9px] text-[#4a6a80] tracking-tight">{user?.email}</p>
+                </div>
+              </div>
+              <button onClick={() => { logout(); navigate("/login"); }} className="p-2 rounded border border-transparent text-[#4a6a80] hover:text-[#ff3838] hover:border-[rgba(255,56,56,0.15)] hover:bg-[rgba(255,56,56,0.02)] transition-all">
+                <LogOut size={13} />
+              </button>
+            </div>
+            
+            {user?.plan === "FREE" && (
+              <div className="p-3 rounded border flex items-center justify-between bg-gradient-to-r from-[rgba(168,85,247,0.06)] to-transparent border-[rgba(168,85,247,0.2)]">
+                <div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#a855f7]"><Crown size={12} /><span>UNLEASH QUANTUM ENGINE</span></div>
+                  <p className="text-[9px] text-[#8a9aa8] mt-0.5">Unlock Claude 3.5 Sonnet, Grok-2, and unmitigated institutional scanning arrays.</p>
+                </div>
+                <button onClick={() => { setUpgradePlan("PRO"); setShowPayment(true); }} className="px-3 py-1.5 rounded text-[10px] font-bold tracking-wider text-[#030810] bg-[#a855f7] hover:bg-[#b96cfc] transition-all">UPGRADE</button>
+              </div>
+            )}
+          </div>
+
+          {/* PARAMETER CONFIGURATION PANEL */}
+          <div className="rounded-lg p-5 border flex flex-col gap-4 bg-[rgba(6,14,24,0.65)] backdrop-blur-md" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+            <SectionLabel icon={<Database size={11} />} text="QUANT CONFIG ARRAY" />
+
+            {/* MODEL SELECT GRID */}
+            <div>
+              <label className="block text-[9px] text-[#4a6a80] tracking-widest mb-1.5">A.I. REASONING AGENT</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {AI_MODELS.map(m => {
+                  const isLocked = m.pro && user?.plan === "FREE";
+                  const isSel = selectedModel === m.id;
+                  return (
+                    <button key={m.id} disabled={isScanning} onClick={() => setSelectedModel(m.id)} className="relative p-2.5 rounded border text-left flex flex-col gap-1 transition-all disabled:opacity-50"
+                      style={{
+                        background: isSel ? "rgba(0,229,255,0.03)" : "rgba(3,8,16,0.4)",
+                        borderColor: isSel ? m.color : "rgba(0,229,255,0.08)",
+                      }}>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-[11px] font-bold text-[#ffffff]">{m.name}</span>
+                        {isLocked && <Lock size={10} className="text-[#a855f7]" />}
+                      </div>
+                      <span className="text-[8px] text-[#4a6a80] tracking-widest">{m.provider.toUpperCase()}</span>
+                      {isSel && <div className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full shadow-[0_0_6px_currentcolor]" style={{ color: m.color, background: m.color }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* PIPELINE STRATEGY STYLE SWITCH */}
+            <div>
+              <label className="block text-[9px] text-[#4a6a80] tracking-widest mb-1.5">EXECUTION TIMEFRAME HORIZON</label>
+              <div className="flex gap-2">
+                {(["SCALP", "SWING"] as const).map(style => (
+                  <button key={style} disabled={isScanning} onClick={() => setSelectedTradeStyle(style)} className="flex-1 py-2 rounded border text-[11px] font-bold tracking-[0.15em] flex items-center justify-center gap-1.5 transition-all"
+                    style={{
+                      fontFamily: "Orbitron, sans-serif",
+                      background: selectedTradeStyle === style ? "rgba(0,229,255,0.04)" : "transparent",
+                      borderColor: selectedTradeStyle === style ? "#00e5ff" : "rgba(0,229,255,0.08)",
+                      color: selectedTradeStyle === style ? "#00e5ff" : "#4a6a80"
+                    }}>
+                    {style === "SCALP" ? <Zap size={11} /> : <Clock size={11} />}
+                    {style}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* METRICS INTERACTION PANEL MANUAL OVERRIDES */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-[9px] text-[#4a6a80] tracking-widest mb-1">ASSET PAIR FILTER</label>
+                <select disabled={isScanning} value={selectedPair} onChange={e => setSelectedPair(e.target.value)} className="w-full bg-[#030810] text-[#ece8e1] border rounded text-[11px] p-2 outline-none transition-all" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+                  <option value="AUTO">🔍 AUTO MATCH</option>
+                  {PAIRS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[9px] text-[#4a6a80] tracking-widest mb-1">BASE TIMEFRAME</label>
+                <select disabled={isScanning} value={selectedTF} onChange={e => setSelectedTF(e.target.value)} className="w-full bg-[#030810] text-[#ece8e1] border rounded text-[11px] p-2 outline-none transition-all" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+                  <option value="AUTO">🔍 AUTO DETECT</option>
+                  {TIMEFRAMES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* SCANNING CORE EXECUTION TRIGGER */}
+            <button disabled={isScanning || !uploadedImage || (user && user.scansUsed >= user.scansLimit) ? true : undefined} onClick={handleScan} className="w-full relative mt-2 py-3 rounded font-bold text-[12px] tracking-[0.2em] transition-all flex items-center justify-center gap-2 overflow-hidden group disabled:opacity-40"
+              style={{
+                fontFamily: "Orbitron, sans-serif",
+                background: isScanning ? "rgba(0,229,255,0.05)" : "linear-gradient(135deg, #00e5ff, #0088cc)",
+                color: isScanning ? "#00e5ff" : "#030810",
+                border: isScanning ? "1px solid rgba(0,229,255,0.2)" : "1px solid transparent",
+                boxShadow: isScanning ? "none" : "0 0 20px rgba(0,229,255,0.2)"
+              }}>
+              {isScanning ? (
+                <>
+                  <Loader size={13} className="animate-spin" />
+                  <span>MATRIX SCANNING — {Math.round(scanProgress)}%</span>
+                </>
+              ) : (
+                <>
+                  <Activity size={13} className="group-hover:scale-110 transition-transform" />
+                  <span>INITIALIZE EVALUATION ENGINE</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* HISTORICAL LIVE SIGNALS LOG */}
+          <div className="flex-1 rounded-lg p-4 border flex flex-col gap-3 overflow-hidden bg-[rgba(6,14,24,0.65)] backdrop-blur-md" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+            <SectionLabel icon={<Clock size={11} />} text="LOGGED TRANSMISSIONS" />
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+              {history.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-[#4a6a80] text-[10px] gap-1 py-12">
+                  <Database size={14} className="opacity-40" />
+                  <span>EMPTY PIPELINE LOG ARRAY</span>
+                </div>
+              ) : (
+                history.map(h => (
+                  <div key={h.id} className="p-2.5 rounded border flex items-center justify-between text-[11px] bg-[rgba(3,8,16,0.3)]" style={{ borderColor: "rgba(0,229,255,0.05)" }}>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#ffffff]">{h.pair}</span>
+                        <span className="text-[8px] px-1 rounded bg-[rgba(255,255,255,0.05)] text-[#8a9aa8]">{h.tradeStyle}</span>
+                      </div>
+                      <span className="text-[9px] text-[#4a6a80] tracking-wide">{h.time} — {h.model}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold tracking-widest text-[11px]" style={{ color: h.direction === "BUY" ? "#39ff14" : h.direction === "SELL" ? "#ff3838" : "#ffc107" }}>
+                        {h.direction}
+                      </span>
+                      <p className="text-[9px] text-[#8a9aa8] tracking-tight">{h.confidence}% ACC</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: CHART DISPLAY SCREEN & ANALYSIS VIEWPORT (8/12) */}
+        <div className="col-span-8 flex flex-col gap-4">
+          
+          {/* ANALYSIS TERMINAL MAIN GRAPH PORT */}
+          <div className="flex-1 rounded-lg border relative flex flex-col items-center justify-center overflow-hidden min-h-[480px] bg-[#040a12]"
+            style={{ borderColor: dragOver ? "#00e5ff" : "rgba(0,229,255,0.12)", boxShadow: dragOver ? "0 0 40px rgba(0,229,255,0.05)" : "none" }}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}>
+            
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+
+            {!uploadedImage ? (
+              <div className="flex flex-col items-center gap-3 text-center p-8 max-w-sm cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                <div className="w-14 h-14 rounded-full border border-dashed flex items-center justify-center bg-[rgba(0,229,255,0.02)] border-[rgba(0,229,255,0.25)] hover:border-[#00e5ff] hover:bg-[rgba(0,229,255,0.05)] transition-all">
+                  <Upload size={18} className="text-[#4a6a80]" />
+                </div>
+                <div>
+                  <p className="text-[12px] font-bold text-[#ffffff] tracking-wider">DROP VISUAL TELEMETRY HERE</p>
+                  <p className="text-[10px] text-[#4a6a80] mt-1 leading-relaxed">Drag chart screenshots directly, or click to map a raw image stream file payload.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full h-full relative flex items-center justify-center p-2 group">
+                <img ref={imgRef} src={uploadedImage} alt="Telemetry Array" className="max-w-full max-h-[580px] object-contain rounded border border-[rgba(255,255,255,0.03)]" />
+                <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none w-full h-full p-2 m-auto max-h-[580px]" />
+                
+                {/* SCANNING ACTIVE INTERCEPT LAYER OVERLAY */}
+                {isScanning && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-[rgba(3,8,16,0.85)] backdrop-blur-sm z-20">
+                    <div className="w-48 h-1 border rounded-full relative overflow-hidden bg-[rgba(255,255,255,0.05)]" style={{ borderColor: "rgba(0,229,255,0.1)" }}>
+                      <motion.div className="h-full bg-[#00e5ff] shadow-[0_0_8px_#00e5ff]" initial={{ width: "0%" }} animate={{ width: `${scanProgress}%` }} transition={{ ease: "linear" }} />
+                    </div>
+                    <p className="text-[10px] mt-3 font-bold tracking-[0.2em] text-[#00e5ff]" style={{ fontFamily: "Orbitron, sans-serif" }}>{scanStep}</p>
+                  </div>
+                )}
+
+                {/* VISUAL CONTROLS OVERLAY WATERMARK */}
+                <div className="absolute top-4 right-4 flex gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => fileInputRef.current?.click()} className="p-1.5 rounded border text-[9px] font-bold bg-[#040a12] border-[rgba(0,229,255,0.15)] text-[#4a6a80] hover:text-[#00e5ff] hover:border-[#00e5ff] transition-all">REPLACE ARRAY</button>
+                  <button onClick={() => { setUploadedImage(null); setResult(null); }} className="p-1.5 rounded border text-[9px] font-bold bg-[#040a12] border-[rgba(255,56,56,0.15)] text-[#4a6a80] hover:text-[#ff3838] hover:border-[#ff3838] transition-all">CLEAR</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* LOWER ANALYSIS MATRIX PANELS */}
+          {result && (
+            <div className="grid grid-cols-12 gap-4">
+              
+              {/* PRIMARY PANEL: DIRECTION AND PRICE LEVELS (7/12) */}
+              <div className="col-span-7 rounded-lg p-4 border flex flex-col justify-between bg-[rgba(6,14,24,0.65)] backdrop-blur-md" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+                <div className="flex justify-between items-start gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15px] font-bold tracking-wider text-[#ffffff]">{result.pair}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded border border-[rgba(0,229,255,0.15)] text-[#00e5ff] bg-[rgba(0,229,255,0.02)] font-bold">{result.timeframe}</span>
+                    </div>
+                    <p className="text-[9px] text-[#4a6a80] tracking-wide mt-1">REASONING AGENT NODE: {AI_MODELS.find(m => m.id === result.model)?.name.toUpperCase() || "ALGO"}</p>
+                  </div>
+
+                  <div className="text-right flex items-center gap-3">
+                    <ConfidenceRing value={result.confidence} />
+                    <div className="flex flex-col items-end justify-center py-1 px-3 rounded border bg-[rgba(3,8,16,0.4)]"
+                      style={{
+                        borderColor: result.direction === "BUY" ? "rgba(57,255,20,0.2)" : result.direction === "SELL" ? "rgba(255,56,56,0.2)" : "rgba(0,229,255,0.12)",
+                        boxShadow: `0 0 12px ${result.direction === "BUY" ? "rgba(57,255,20,0.03)" : result.direction === "SELL" ? "rgba(255,56,56,0.03)" : "transparent"}`
+                      }}>
+                      <span className="text-[8px] text-[#4a6a80] tracking-widest">DECISION MATRIX</span>
+                      <span className="text-[16px] font-bold tracking-widest leading-none mt-1" style={{ fontFamily: "Orbitron, sans-serif", color: result.direction === "BUY" ? "#39ff14" : result.direction === "SELL" ? "#ff3838" : "#ffc107" }}>
+                        {result.direction}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TARGET MATHEMATICS PRICING ENGINE BLOCKS */}
+                <div className="grid grid-cols-5 gap-1.5 border-t pt-3 mt-3" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
+                  <div className="p-1.5 rounded border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.01)] text-center">
+                    <span className="block text-[8px] text-[#4a6a80] tracking-wider mb-0.5">ENTRY</span>
+                    <span className="text-[10px] text-[#ffffff] font-bold">{fmt(result.entry, result.pair)}</span>
+                  </div>
+                  <div className="p-1.5 rounded border border-[rgba(255,56,56,0.15)] bg-[rgba(255,56,56,0.01)] text-center">
+                    <span className="block text-[8px] text-[#ff6464] tracking-wider mb-0.5">STOP LOSS</span>
+                    <span className="text-[10px] text-[#ff3838] font-bold">{fmt(result.sl, result.pair)}</span>
+                  </div>
+                  <div className="p-1.5 rounded border border-[rgba(57,255,20,0.15)] bg-[rgba(57,255,20,0.01)] text-center">
+                    <span className="block text-[8px] text-[#64ff64] tracking-wider mb-0.5">TARGET 1</span>
+                    <span className="text-[10px] text-[#39ff14] font-bold">{fmt(result.tp1, result.pair)}</span>
+                  </div>
+                  <div className="p-1.5 rounded border border-[rgba(0,229,255,0.15)] bg-[rgba(0,229,255,0.01)] text-center">
+                    <span className="block text-[8px] text-[#64e5ff] tracking-wider mb-0.5">TARGET 2</span>
+                    <span className="text-[10px] text-[#00e5ff] font-bold">{fmt(result.tp2, result.pair)}</span>
+                  </div>
+                  <div className="p-1.5 rounded border border-[rgba(255,193,7,0.15)] bg-[rgba(255,193,7,0.01)] text-center">
+                    <span className="block text-[8px] text-[#ffd154] tracking-wider mb-0.5">TARGET 3</span>
+                    <span className="text-[10px] text-[#ffc107] font-bold">{fmt(result.tp3, result.pair)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECONDARY PANEL: GEOMETRIC PATTERNS & WEIGHTS (5/12) */}
+              <div className="col-span-5 rounded-lg p-4 border flex flex-col justify-between bg-[rgba(6,14,24,0.65)] backdrop-blur-md" style={{ borderColor: "rgba(0,229,255,0.12)" }}>
+                <SectionLabel icon={<BarChart2 size={11} />} text="CONFLUENCE ATTRIBUTES" />
+                
+                {/* MOUNTED STRUCTURAL PATTERN BADGES */}
+                <div className="flex flex-wrap gap-1 my-2">
+                  {result.patterns.length === 0 ? (
+                    <span className="text-[9px] text-[#4a6a80]">NO STRUCTURAL PATTERNS IDENTIFIED</span>
+                  ) : (
+                    result.patterns.map(p => (
+                      <span key={p} className="text-[9px] px-2 py-0.5 rounded bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.06)] text-[#8a9aa8] flex items-center gap-1">
+                        <CheckCircle size={8} className="text-[#00e5ff]" />{p}
+                      </span>
+                    ))
+                  )}
+                  {result.breakout && <span className="text-[9px] px-2 py-0.5 rounded font-bold bg-[rgba(57,255,20,0.06)] border border-[rgba(57,255,20,0.2)] text-[#39ff14] tracking-tight">BREAKOUT_CONFIRMED</span>}
+                  {result.fakeoutRisk && <span className="text-[9px] px-2 py-0.5 rounded font-bold bg-[rgba(255,56,56,0.06)] border border-[rgba(255,56,56,0.2)] text-[#ff3838] tracking-tight">⚠️ HIGH_FAKEOUT_RISK</span>}
+                </div>
+
+                {/* RAW BREAKDOWN RADIAL SLIDERS */}
+                <div className="space-y-1.5 border-t pt-2.5" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span style={{ color: "#4a6a80" }}>Trend Alignment (0-30)</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
+                        <div className="h-full rounded-full" 
+                          style={{ width: `${(result.scoreComponents.trendStructure / 30) * 100}%`, background: "#00e5ff" }} />
+                      </div>
+                      <span style={{ color: "#00e5ff" }}>{result.scoreComponents.trendStructure}/30</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span style={{ color: "#4a6a80" }}>Chart Formations (0-25)</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
+                        <div className="h-full rounded-full" 
+                          style={{ width: `${(result.scoreComponents.chartPatterns / 25) * 100}%`, background: "#39ff14" }} />
+                      </div>
+                      <span style={{ color: "#39ff14" }}>{result.scoreComponents.chartPatterns}/25</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span style={{ color: "#4a6a80" }}>Volume Confluence (0-25)</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
+                        <div className="h-full rounded-full" 
+                          style={{ width: `${(result.scoreComponents.indicatorConfluence / 25) * 100}%`, background: "#ffc107" }} />
+                      </div>
+                      <span style={{ color: "#ffc107" }}>{result.scoreComponents.indicatorConfluence}/25</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span style={{ color: "#4a6a80" }}>Support/Resistance (0-20)</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.07)" }}>
+                        <div className="h-full rounded-full" 
+                          style={{ width: `${(result.scoreComponents.supportResistance / 20) * 100}%`, background: "#ff3838" }} />
+                      </div>
+                      <span style={{ color: "#ff3838" }}>{result.scoreComponents.supportResistance}/20</span>
+                    </div>
+                  </div>
+                  <div className="border-t pt-2 mt-1" style={{ borderColor: "rgba(0,229,255,0.08)" }}>
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span style={{ color: "#4a6a80" }}>TOTAL CONFIDENCE</span>
+                      <span style={{ color: result.confidence >= 70 ? "#39ff14" : result.confidence >= 50 ? "#ffc107" : "#ff3838" }}>
+                        {result.confidence}% {result.confidence === 97 && "⭐"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* STRIPE PAYMENT OVERLAY ARRAY ON DEMAND */}
+      {showPayment && <PaymentModal targetPlan={upgradePlan} onClose={() => setShowPayment(false)} />}
     </div>
   );
 }

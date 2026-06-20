@@ -24,9 +24,9 @@ export async function analyzeChartWithGitHubAI(
     console.log(`📊 Trade Style: ${tradeStyle}`);
 
     // ============================================================
-    // INSTITUTIONAL SMC EXECUTION ENGINE SYSTEM PROMPT - v2.0
+    // BALANCED INSTITUTIONAL SMC EXECUTION ENGINE - v2.1
     // ============================================================
-    const systemPrompt = `You are an elite quantitative execution analyst operating at a Tier-1 hedge fund. Your sole function is to parse chart images and output machine-executable trading signals with ZERO lag, ZERO generic indicators, and 100% pixel-to-price accuracy.
+    const systemPrompt = `You are an elite quantitative execution analyst operating at a Tier-1 hedge fund. Your sole function is to parse chart images and output machine-executable trading signals.
 
 ## MANDATORY VISUAL CALIBRATION PROTOCOL
 
@@ -63,13 +63,14 @@ Before ANY analysis, you MUST:
 
 ## EXECUTION MECHANICS
 
-### SCALP MODE (Aggressive)
-- Hunt for micro-confluences on the visible timeframe
-- Trigger BUY if: Liquidity sweep down + bullish FVG fill + OB reaction
-- Trigger SELL if: Liquidity sweep up + bearish FVG fill + OB reaction
-- Only output "NO TRADE" if price is in a tight, volume-less consolidation range (no clear structure)
+### SCALP MODE (Aggressive Entry)
+- Hunt for ANY micro-confluence on the visible timeframe
+- Trigger BUY if: Liquidity sweep down OR bullish FVG fill OR OB reaction OR any bullish pattern
+- Trigger SELL if: Liquidity sweep up OR bearish FVG fill OR OB reaction OR any bearish pattern
+- Return a TRADE signal even on minor setups - this is an execution engine, not a filter
+- ONLY return "NO TRADE" if price is in a completely flat, dead consolidation with NO visible structure
 
-### SWING MODE (Precision)
+### SWING MODE (Precision Entry)
 - Wait for structural pullbacks to premium/discount zones
 - Set pending limit orders at institutional levels
 - Look for HTF (Higher Timeframe) confluence on the visible chart
@@ -110,7 +111,8 @@ You MUST respond with ONLY this JSON object. No additional text, no markdown, no
 - ENTRY MUST BE THE FINAL CANDLE'S CLOSING PRICE
 - SL MUST BE BEYOND STRUCTURAL INVALIDATION (NOT FIXED PIPS)
 - ONLY OUTPUT THE JSON OBJECT - NOTHING ELSE
-- IF NO VALID SETUP EXISTS, RETURN "NO TRADE" WITH BRIEF REASON IN VERDICT_SUMMARY`;
+- GIVE A TRADE SIGNAL UNLESS THE CHART IS COMPLETELY FLAT
+- SCALP MODE: BE AGGRESSIVE - FIND ANY SETUP`;
 
     const response = await client.chat.completions.create({
       model: "openai/gpt-4o",
@@ -131,6 +133,7 @@ IMPORTANT:
 2. Lock onto the final candle for entry
 3. Use SMC analysis (BOS/CHoCH, FVGs, Order Blocks, Liquidity Sweeps)
 4. Output ONLY the minified JSON
+5. ${tradeStyle === "SCALP" ? "BE AGGRESSIVE - give a BUY or SELL signal unless the chart is completely flat" : "Look for structural pullbacks for precision entries"}
 
 Based on what you ACTUALLY SEE, respond with ONLY the JSON object.`
             },
@@ -143,7 +146,7 @@ Based on what you ACTUALLY SEE, respond with ONLY the JSON object.`
           ]
         }
       ],
-      temperature: 0.1,
+      temperature: 0.2,
       max_tokens: 4096,
       top_p: 1,
       response_format: { type: "json_object" }
@@ -152,7 +155,6 @@ Based on what you ACTUALLY SEE, respond with ONLY the JSON object.`
     const content = response.choices[0]?.message?.content || '';
     console.log('📝 AI Response received');
     
-    // Parse the JSON response
     try {
       const result = JSON.parse(content);
       console.log('📊 Parsed result:', result);
