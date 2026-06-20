@@ -5,6 +5,7 @@ import { useNavigate } from "react-router";
 import {
   Activity, Zap, BarChart2, Clock, CheckCircle, Database, Cpu,
   Wifi, AlertTriangle, LogOut, User, Crown, Lock, X, Check, Loader,
+  Upload, // Added Upload
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
