@@ -23,196 +23,116 @@ export async function analyzeChartWithGitHubAI(
     console.log('📤 Analyzing chart with GitHub AI (GPT-4o)...');
     console.log(`📊 Trade Style: ${tradeStyle}`);
 
-    // SMC and Trade Style specific prompts
-    const tradeStyleConfig = tradeStyle === "SCALP" 
-      ? {
-          name: "SCALP",
-          timeframe: "M1-M15",
-          stopLoss: "10-20 pips",
-          target: "10-30 pips",
-          riskReward: "1:1 to 1:1.5",
-          focus: "short-term momentum, order blocks, FVG (Fair Value Gaps)",
-          entryStyle: "aggressive entries on order block breaks or FVG fills",
-          tradeDuration: "15-60 minutes"
-        }
-      : {
-          name: "SWING",
-          timeframe: "H1-D1",
-          stopLoss: "50-100+ pips",
-          target: "100-300+ pips",
-          riskReward: "1:2 to 1:4",
-          focus: "higher timeframe structure, daily/weekly levels, institutional order flow",
-          entryStyle: "conservative entries on pullbacks to key SMC levels",
-          tradeDuration: "days to weeks"
-        };
+    // ============================================================
+    // INSTITUTIONAL SMC EXECUTION ENGINE SYSTEM PROMPT - v2.0
+    // ============================================================
+    const systemPrompt = `You are an elite quantitative execution analyst operating at a Tier-1 hedge fund. Your sole function is to parse chart images and output machine-executable trading signals with ZERO lag, ZERO generic indicators, and 100% pixel-to-price accuracy.
+
+## MANDATORY VISUAL CALIBRATION PROTOCOL
+
+### Step 1: Coordinate System Mapping
+Before ANY analysis, you MUST:
+1. Locate the Y-axis (price scale) on the chart image
+2. Identify the visible price range (highest and lowest visible prices)
+3. Map pixel coordinates to exact price levels using the Y-axis tick marks
+4. Verify your price mapping against 3 distinct visible price points on the Y-axis
+
+### Step 2: Absolute Right-Edge Anchoring (The NOW)
+- Lock your focus on the LAST COMPLETED CANDLE (rightmost edge of the chart)
+- The ENTRY price MUST be within 0.01% of the closing price of that final candle
+- If the visible chart shows multiple candles, the entry is the closing price of the final, fully printed candle
+- NEVER output an entry price that the market has already moved beyond
+
+## INSTITUTIONAL ORDER FLOW ANALYSIS (SMC ONLY)
+
+### Market Structure Analysis
+- Identify Break of Structure (BOS) / Market Structure Shift (MSS) in the last 2-3 candles
+- Detect Change of Character (CHoCH) with displacement confirmation
+- Map equal highs/lows for liquidity grab detection
+- Identify unmitigated Fair Value Gaps (FVGs) within the visible range
+
+### Liquidity Sweep Detection
+- Flag if the most recent candle wick took out a previous high/low
+- Identify if price swept buy-side or sell-side liquidity
+- Determine if the sweep was aggressive (large wick, immediate reversal) or passive
+
+### Order Block Identification
+- Locate the last 1-2 candles before a strong displacement move
+- Identify if price is currently resting or returning to that zone
+- Determine if the OB is fresh (unmitigated) or already filled
+
+## EXECUTION MECHANICS
+
+### SCALP MODE (Aggressive)
+- Hunt for micro-confluences on the visible timeframe
+- Trigger BUY if: Liquidity sweep down + bullish FVG fill + OB reaction
+- Trigger SELL if: Liquidity sweep up + bearish FVG fill + OB reaction
+- Only output "NO TRADE" if price is in a tight, volume-less consolidation range (no clear structure)
+
+### SWING MODE (Precision)
+- Wait for structural pullbacks to premium/discount zones
+- Set pending limit orders at institutional levels
+- Look for HTF (Higher Timeframe) confluence on the visible chart
+- Target major structural liquidity pools (previous highs/lows)
+
+## RISK PARAMETERS & LEVELS
+
+### Entry Calculation
+- For SCALP: Entry = Closing price of the final candle (within 1 tick/point)
+- For SWING: Entry = The nearest institutional level (FVG edge or OB boundary)
+
+### Stop Loss Placement
+- Place SL 2-3 ticks/points BEYOND the structural invalidation point
+- Invalidation point = The wick that swept liquidity (for sweeps) or beyond the OB/FVG
+- NEVER use fixed pip counts - use structural invalidation only
+
+### Take Profit Structure
+- TP1: 1:1 or 1:1.5 Risk-to-Reward (remove risk immediately)
+- TP2: Target first opposing structural liquidity pool (minimum 1:2 overall RR)
+- TP3: Target major structural high/low (minimum 1:2.5-3 overall RR)
+
+## OUTPUT VALIDATION RULES (SELF-CHECK)
+
+Before outputting, verify:
+1. ENTRY price matches the final candle's closing price
+2. ENTRY is NOT a historical price from the middle of the chart
+3. STOP LOSS is placed at a structural level, NOT a fixed pip distance
+4. All prices are derived from the Y-axis mapping
+5. The overall RR ratio is calculated, not guessed
+
+## OUTPUT FORMAT - MINIFIED JSON ONLY
+
+You MUST respond with ONLY this JSON object. No additional text, no markdown, no explanations.
+
+{"instrument":"XAU/USD","timeframe":"H1","trade_style":"SCALP","decision":"BUY","confidence_percentage":78,"market_structure":"Bullish MSS confirmed after liquidity sweep","detected_patterns":["Liquidity Sweep","Bullish FVG","CHoCH"],"execution":{"entry":4000.00,"stop_loss":3995.00,"tp_1":4005.00,"tp_2":4010.00,"tp_3":4018.00,"risk_reward_ratio":"1:2.5"},"verdict_summary":"Aggressive buy triggered after sell-side liquidity sweep into bullish FVG with strong displacement."}
+
+## CRITICAL REMINDERS
+- ENTRY MUST BE THE FINAL CANDLE'S CLOSING PRICE
+- SL MUST BE BEYOND STRUCTURAL INVALIDATION (NOT FIXED PIPS)
+- ONLY OUTPUT THE JSON OBJECT - NOTHING ELSE
+- IF NO VALID SETUP EXISTS, RETURN "NO TRADE" WITH BRIEF REASON IN VERDICT_SUMMARY`;
 
     const response = await client.chat.completions.create({
       model: "openai/gpt-4o",
       messages: [
         {
           role: "system",
-          content: `You are a professional Smart Money Concepts (SMC) forex and commodity technical analyst.
-
-TRADE STYLE: ${tradeStyleConfig.name} TRADING
-- Timeframe Focus: ${tradeStyleConfig.timeframe}
-- Stop Loss: ${tradeStyleConfig.stopLoss}
-- Target: ${tradeStyleConfig.target}
-- Risk/Reward: ${tradeStyleConfig.riskReward}
-- Focus: ${tradeStyleConfig.focus}
-- Entry Style: ${tradeStyleConfig.entryStyle}
-- Trade Duration: ${tradeStyleConfig.tradeDuration}
-
-SMC ANALYSIS FRAMEWORK:
-1. MARKET STRUCTURE:
-   - Break of Structure (BOS)
-   - Change of Character (CHoCH)
-   - Higher Highs/Higher Lows (Bullish) or Lower Highs/Lower Lows (Bearish)
-
-2. ORDER BLOCKS & FVGS:
-   - Bullish Order Blocks (last down candle before strong up move)
-   - Bearish Order Blocks (last up candle before strong down move)
-   - Fair Value Gaps (FVG) - Imbalances in price
-
-3. LIQUIDITY:
-   - Buy-side liquidity (above recent highs)
-   - Sell-side liquidity (below recent lows)
-   - Equal highs/lows (liquidity grabs)
-
-4. SUPPLY & DEMAND ZONES:
-   - Supply zones (resistance areas)
-   - Demand zones (support areas)
-   - Zone strength (fresh vs tested)
-
-5. ENTRY & EXIT:
-   - Entry: Order block break, FVG fill, liquidity sweep
-   - Stop Loss: Beyond recent structure or order block
-   - Take Profit: Next liquidity level or structure
-
-SCORING SYSTEM (Total Confidence = Sum of all components, capped at 97%):
-
-1. TREND STRUCTURE (0-30 pts): BOS/CHoCH, HH/HL or LH/LL, market structure
-2. ORDER BLOCK/FVG (0-25 pts): Quality of order blocks, FVG fills, imbalance zones
-3. LIQUIDITY ANALYSIS (0-25 pts): Liquidity sweeps, buy/sell-side liquidity
-4. SUPPLY/DEMAND (0-20 pts): Key supply/demand zones, zone strength
-
-RULES:
-- ${tradeStyle === "SCALP" ? 'Tighter stops (10-20 pips), quicker exits, 1:1 to 1:1.5 R:R' : 'Wider stops (50-100+ pips), larger targets, 1:2 to 1:4 R:R'}
-- ONLY enter if Risk/Reward >= 1:1.5
-- Confidence = Sum of all components
-- Cap confidence at 97%
-- Use REAL values from the chart
-- Identify and draw trendlines on the chart
-- Identify and draw pattern structures`
+          content: systemPrompt
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: `Analyze this chart using Smart Money Concepts (SMC) and provide a complete technical analysis.
+              text: `Analyze this chart image.${pair && pair !== "AUTO" ? ` Instrument: ${pair}` : ''}${timeframe && timeframe !== "AUTO" ? ` Timeframe: ${timeframe}` : ''} Trade Style: ${tradeStyle}
 
-⚠️ YOU MUST LOOK AT THE CHART IMAGE. USE REAL VALUES.
+IMPORTANT: 
+1. Map the Y-axis prices from the chart
+2. Lock onto the final candle for entry
+3. Use SMC analysis (BOS/CHoCH, FVGs, Order Blocks, Liquidity Sweeps)
+4. Output ONLY the minified JSON
 
-STEP 1: Analyze MARKET STRUCTURE
-- Identify Break of Structure (BOS) or Change of Character (CHoCH)
-- Identify HH/HL (BULLISH) or LH/LL (BEARISH) structure
-- Identify the current trend direction
-
-STEP 2: Identify ORDER BLOCKS & FVGS
-- Look for Bullish Order Blocks (last down candle before strong up move)
-- Look for Bearish Order Blocks (last up candle before strong down move)
-- Look for Fair Value Gaps (FVG) - price imbalances
-
-STEP 3: Analyze LIQUIDITY
-- Identify buy-side liquidity (above recent highs)
-- Identify sell-side liquidity (below recent lows)
-- Look for liquidity sweeps (wicks taking out liquidity)
-
-STEP 4: Identify SUPPLY & DEMAND ZONES
-- Supply zones (resistance areas)
-- Demand zones (support areas)
-- Zone strength (fresh vs tested)
-
-STEP 5: Identify PATTERNS & TRENDLINES
-- Look for chart patterns: double top, double bottom, head and shoulders, flags, etc.
-- Draw trendlines connecting swing highs and swing lows
-- Identify channel patterns
-
-⚠️ CRITICAL: USE THE ACTUAL NUMBERS YOU SEE ON THE CHART
-
-Based on what you ACTUALLY SEE, respond with ONLY this JSON format:
-
-{
-  "symbol": "THE_SYMBOL_FROM_CHART",
-  "direction": "BUY or SELL or NO TRADE based on what you see",
-  "trend": "BULLISH or BEARISH or NEUTRAL based on what you see",
-  "confidence": 75,
-  "entry": THE_ACTUAL_PRICE_ON_CHART,
-  "sl": THE_ACTUAL_PRICE_ON_CHART - 20,
-  "tp1": THE_ACTUAL_PRICE_ON_CHART + 20,
-  "tp2": THE_ACTUAL_PRICE_ON_CHART + 40,
-  "tp3": THE_ACTUAL_PRICE_ON_CHART + 60,
-  "patterns": ["PATTERN_1", "PATTERN_2"],
-  "support": SUPPORT_LEVEL_FROM_CHART,
-  "resistance": RESISTANCE_LEVEL_FROM_CHART,
-  "riskReward": 2.5,
-  "explanation": "Your analysis based on what you see",
-  "trendStrength": 80,
-  "patternScore": 64,
-  "volumeScore": 56,
-  "breakout": false,
-  "fakeoutRisk": false,
-  "timeframe": "TIMEFRAME_FROM_CHART",
-  "tradeStyle": "${tradeStyle}",
-  "scoreComponents": {
-    "trendStructure": 25,
-    "orderBlockFVG": 20,
-    "liquidityAnalysis": 18,
-    "supplyDemand": 15
-  },
-  "smcData": {
-    "marketStructure": "BULLISH or BEARISH or NEUTRAL",
-    "bos": "Break of Structure detected: YES/NO",
-    "choch": "Change of Character detected: YES/NO",
-    "orderBlocks": ["Bullish Order Block at 1.0850", "Bearish Order Block at 1.0900"],
-    "fvgs": ["FVG at 1.0870-1.0885"],
-    "liquidity": ["Buy-side liquidity at 1.0920", "Sell-side liquidity at 1.0800"],
-    "supplyDemandZones": [
-      { "type": "supply", "level": 1.0900, "strength": "strong" },
-      { "type": "demand", "level": 1.0820, "strength": "moderate" }
-    ],
-    "trendline": {
-      "type": "ascending or descending or horizontal",
-      "points": ["1.0850", "1.0880", "1.0910"]
-    }
-  }
-}
-
-EXAMPLE for SCALP (if you see XAU/USD at 4000):
-- entry: 4000.00
-- sl: 3995.00 (5 points - tight)
-- tp1: 4005.00
-- tp2: 4008.00
-- tp3: 4012.00
-- riskReward: 1.2
-
-EXAMPLE for SWING (if you see XAU/USD at 4000):
-- entry: 4000.00
-- sl: 3970.00 (30 points - wider)
-- tp1: 4030.00
-- tp2: 4050.00
-- tp3: 4080.00
-- riskReward: 3.0
-
-⚠️ DO NOT USE GENERIC VALUES. USE WHAT YOU SEE ON THE CHART.
-⚠️ LOOK AT THE CHART IMAGE BEFORE RESPONDING.
-⚠️ ONLY RESPOND WITH JSON, NOTHING ELSE.
-
-${pair && pair !== "AUTO" ? `The chart shows: ${pair}` : 'Look at the chart to find the symbol'}
-${timeframe && timeframe !== "AUTO" ? `Timeframe: ${timeframe}` : 'Look at the chart to find the timeframe'}
-Trade Style: ${tradeStyle}
-
-NOW LOOK AT THE CHART AND RESPOND WITH REAL SMC ANALYSIS VALUES.`
+Based on what you ACTUALLY SEE, respond with ONLY the JSON object.`
             },
             {
               type: "image_url",
@@ -225,20 +145,23 @@ NOW LOOK AT THE CHART AND RESPOND WITH REAL SMC ANALYSIS VALUES.`
       ],
       temperature: 0.1,
       max_tokens: 4096,
-      top_p: 1
+      top_p: 1,
+      response_format: { type: "json_object" }
     });
 
     const content = response.choices[0]?.message?.content || '';
-    console.log('📝 AI Response:', content.substring(0, 200) + '...');
+    console.log('📝 AI Response received');
     
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]);
+    // Parse the JSON response
+    try {
+      const result = JSON.parse(content);
       console.log('📊 Parsed result:', result);
       return result;
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError);
+      console.log('Raw content:', content);
+      return { error: 'Failed to parse AI response', raw: content };
     }
-    
-    return { error: 'Failed to parse AI response', raw: content };
   } catch (error) {
     console.error('❌ GitHub AI error:', error);
     throw error;

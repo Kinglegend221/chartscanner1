@@ -10,17 +10,6 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
-// ─── AI Models ────────────────────────────────────────────────────────────────
-
-const AI_MODELS = [
-  { id: "gpt4o", name: "GPT-4o", provider: "OpenAI", color: "#10b981", pro: false },
-  { id: "gemini", name: "Gemini 1.5 Pro", provider: "Google", color: "#4285f4", pro: false },
-  { id: "claude", name: "Claude 3.5 Sonnet", provider: "Anthropic", color: "#c8a96e", pro: true },
-  { id: "grok", name: "Grok-2", provider: "xAI", color: "#a855f7", pro: true },
-  { id: "llama", name: "Llama 3.1 405B", provider: "Meta", color: "#3b82f6", pro: true },
-  { id: "mistral", name: "Mistral Large", provider: "Mistral AI", color: "#f97316", pro: true },
-];
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TradeDirection = "BUY" | "SELL" | "NO TRADE";
@@ -32,20 +21,6 @@ interface ScoreComponents {
   chartPatterns: number;
   indicatorConfluence: number;
   supportResistance: number;
-}
-
-interface SMCData {
-  marketStructure: string;
-  bos: string;
-  choch: string;
-  orderBlocks: string[];
-  fvgs: string[];
-  liquidity: string[];
-  supplyDemandZones: { type: string; level: number; strength: string }[];
-  trendline: {
-    type: string;
-    points: string[];
-  };
 }
 
 interface AnalysisResult {
@@ -70,7 +45,8 @@ interface AnalysisResult {
   model: string;
   tradeStyle: TradeStyle;
   scoreComponents: ScoreComponents;
-  smcData?: SMCData;
+  verdictSummary?: string;
+  marketStructure?: string;
 }
 
 interface HistoryEntry {
@@ -83,498 +59,16 @@ interface HistoryEntry {
   tradeStyle: TradeStyle;
 }
 
-// ─── Pattern Drawing Functions ──────────────────────────────────────────────
+// ─── AI Models ────────────────────────────────────────────────────────────────
 
-function drawDoubleBottom(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.strokeStyle = "#ff6b6b";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x, y + h);
-  ctx.quadraticCurveTo(x + w * 0.25, y + h * 0.2, x + w * 0.4, y + h * 0.7);
-  ctx.quadraticCurveTo(x + w * 0.5, y + h * 0.1, x + w * 0.6, y + h * 0.7);
-  ctx.quadraticCurveTo(x + w * 0.75, y + h * 0.2, x + w, y + h);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,107,107,0.15)";
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawHeadAndShoulders(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.strokeStyle = "#ffd93d";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x, y + h);
-  ctx.quadraticCurveTo(x + w * 0.15, y + h * 0.2, x + w * 0.25, y + h * 0.5);
-  ctx.quadraticCurveTo(x + w * 0.35, y + h * 0.1, x + w * 0.5, y + h * 0.3);
-  ctx.quadraticCurveTo(x + w * 0.65, y + h * 0.1, x + w * 0.75, y + h * 0.5);
-  ctx.quadraticCurveTo(x + w * 0.85, y + h * 0.2, x + w, y + h);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,217,61,0.15)";
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawFlag(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, isBull: boolean) {
-  ctx.save();
-  ctx.strokeStyle = isBull ? "#6bcb77" : "#ff3838";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x + w * 0.3, y + h);
-  ctx.lineTo(x + w * 0.3, y);
-  ctx.stroke();
-  ctx.beginPath();
-  if (isBull) {
-    ctx.moveTo(x + w * 0.3, y + h * 0.2);
-    ctx.lineTo(x + w * 0.85, y + h * 0.4);
-    ctx.lineTo(x + w * 0.3, y + h * 0.6);
-  } else {
-    ctx.moveTo(x + w * 0.3, y + h * 0.8);
-    ctx.lineTo(x + w * 0.85, y + h * 0.6);
-    ctx.lineTo(x + w * 0.3, y + h * 0.4);
-  }
-  ctx.closePath();
-  ctx.fillStyle = isBull ? "rgba(107,203,119,0.3)" : "rgba(255,56,56,0.3)";
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawEngulfing(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.fillStyle = "#ff3838";
-  ctx.fillRect(x + w * 0.1, y + h * 0.3, w * 0.3, h * 0.5);
-  ctx.fillStyle = "#39ff14";
-  ctx.fillRect(x + w * 0.45, y + h * 0.1, w * 0.4, h * 0.8);
-  ctx.strokeStyle = "#39ff14";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x + w * 0.45, y + h * 0.1, w * 0.4, h * 0.8);
-  ctx.restore();
-}
-
-function drawDoji(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.strokeStyle = "#ffc107";
-  ctx.lineWidth = 2;
-  const midX = x + w * 0.5;
-  const midY = y + h * 0.5;
-  ctx.beginPath();
-  ctx.moveTo(midX, y + h * 0.1);
-  ctx.lineTo(midX, y + h * 0.9);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(midX - w * 0.3, midY);
-  ctx.lineTo(midX + w * 0.3, midY);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawHammer(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.fillStyle = "#39ff14";
-  ctx.fillRect(x + w * 0.35, y + h * 0.5, w * 0.3, h * 0.3);
-  ctx.strokeStyle = "#39ff14";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x + w * 0.5, y + h * 0.5);
-  ctx.lineTo(x + w * 0.5, y + h * 0.9);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawShootingStar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.fillStyle = "#ff3838";
-  ctx.fillRect(x + w * 0.35, y + h * 0.2, w * 0.3, h * 0.3);
-  ctx.strokeStyle = "#ff3838";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x + w * 0.5, y + h * 0.5);
-  ctx.lineTo(x + w * 0.5, y + h * 0.1);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.save();
-  ctx.strokeStyle = "#4d96ff";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(x, y + h * 0.1);
-  ctx.lineTo(x + w, y + h * 0.4);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x, y + h * 0.6);
-  ctx.lineTo(x + w, y + h * 0.9);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(77,150,255,0.1)";
-  ctx.fill();
-  ctx.restore();
-}
-
-// ─── Main Canvas Overlay ─────────────────────────────────────────────────────
-
-function drawOverlay(canvas: HTMLCanvasElement, r: AnalysisResult) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  
-  const prices = [r.sl, r.entry, r.tp1, r.tp2, r.tp3, ...r.zones.map(z => z.level)];
-  const minP = Math.min(...prices) * 0.9993;
-  const maxP = Math.max(...prices) * 1.0007;
-  const py = (p: number) => h - ((p - minP) / (maxP - minP)) * h * 0.82 - h * 0.09;
-  
-  // ─── 1. DRAW TRENDLINES ───────────────────────────────────────────────────
-  if (r.smcData?.trendline) {
-    const tl = r.smcData.trendline;
-    const points = tl.points.map(p => parseFloat(p));
-    
-    if (points.length >= 2) {
-      const y1 = py(points[0]);
-      const y2 = py(points[points.length - 1]);
-      const x1 = w * 0.05;
-      const x2 = w * 0.70;
-      
-      ctx.save();
-      ctx.setLineDash([5, 5]);
-      ctx.strokeStyle = tl.type === "ascending" ? "#39ff14" : tl.type === "descending" ? "#ff3838" : "#ffc107";
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = tl.type === "ascending" ? "#39ff14" : tl.type === "descending" ? "#ff3838" : "#ffc107";
-      ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      
-      ctx.font = "bold 10px JetBrains Mono,monospace";
-      ctx.fillStyle = tl.type === "ascending" ? "#39ff14" : tl.type === "descending" ? "#ff3838" : "#ffc107";
-      ctx.shadowBlur = 6;
-      const label = tl.type === "ascending" ? "▲ TRENDLINE" : tl.type === "descending" ? "▼ TRENDLINE" : "— TRENDLINE";
-      ctx.fillText(label, w * 0.72, (y1 + y2) / 2);
-      ctx.restore();
-    }
-  }
-  
-  // ─── 2. DRAW ORDER BLOCKS ───────────────────────────────────────────────
-  if (r.smcData?.orderBlocks) {
-    r.smcData.orderBlocks.forEach((block) => {
-      const priceMatch = block.match(/(\d+\.?\d*)/);
-      if (priceMatch) {
-        const price = parseFloat(priceMatch[0]);
-        const y = py(price);
-        const isBullish = block.includes("Bullish");
-        const color = isBullish ? "rgba(57,255,20,0.2)" : "rgba(255,56,56,0.2)";
-        const borderColor = isBullish ? "#39ff14" : "#ff3838";
-        
-        ctx.save();
-        const blockHeight = 15;
-        ctx.fillStyle = color;
-        ctx.fillRect(0, y - blockHeight/2, w * 0.2, blockHeight);
-        ctx.strokeStyle = borderColor;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.strokeRect(0, y - blockHeight/2, w * 0.2, blockHeight);
-        ctx.restore();
-        
-        ctx.save();
-        ctx.font = "bold 8px JetBrains Mono,monospace";
-        ctx.fillStyle = borderColor;
-        ctx.shadowColor = "rgba(0,0,0,0.8)";
-        ctx.shadowBlur = 4;
-        const label = isBullish ? "▲ OB" : "▼ OB";
-        ctx.fillText(label, 4, y - blockHeight/2 - 4);
-        ctx.restore();
-      }
-    });
-  }
-  
-  // ─── 3. DRAW FAIR VALUE GAPS (FVG) ──────────────────────────────────────
-  if (r.smcData?.fvgs) {
-    r.smcData.fvgs.forEach((fvg) => {
-      const numbers = fvg.match(/(\d+\.?\d*)/g);
-      if (numbers && numbers.length >= 2) {
-        const top = parseFloat(numbers[0]);
-        const bottom = parseFloat(numbers[1]);
-        const yTop = py(Math.max(top, bottom));
-        const yBottom = py(Math.min(top, bottom));
-        
-        ctx.save();
-        const gradient = ctx.createLinearGradient(0, yTop, 0, yBottom);
-        gradient.addColorStop(0, 'rgba(255,193,7,0.15)');
-        gradient.addColorStop(0.5, 'rgba(255,193,7,0.05)');
-        gradient.addColorStop(1, 'rgba(255,193,7,0.15)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(w * 0.2, yTop, w * 0.5, yBottom - yTop);
-        ctx.strokeStyle = 'rgba(255,193,7,0.3)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.strokeRect(w * 0.2, yTop, w * 0.5, yBottom - yTop);
-        ctx.restore();
-        
-        ctx.save();
-        ctx.font = "bold 8px JetBrains Mono,monospace";
-        ctx.fillStyle = "#ffc107";
-        ctx.shadowColor = "rgba(0,0,0,0.8)";
-        ctx.shadowBlur = 4;
-        ctx.fillText("FVG", w * 0.22, (yTop + yBottom) / 2 + 3);
-        ctx.restore();
-      }
-    });
-  }
-  
-  // ─── 4. DRAW LIQUIDITY LEVELS ────────────────────────────────────────────
-  if (r.smcData?.liquidity) {
-    r.smcData.liquidity.forEach((liquidity) => {
-      const priceMatch = liquidity.match(/(\d+\.?\d*)/);
-      if (priceMatch) {
-        const price = parseFloat(priceMatch[0]);
-        const y = py(price);
-        const isBuySide = liquidity.includes("buy-side") || liquidity.includes("Buy-side");
-        const color = isBuySide ? "#39ff14" : "#ff3838";
-        
-        ctx.save();
-        ctx.setLineDash([2, 6]);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.3, y);
-        ctx.lineTo(w * 0.7, y);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        ctx.restore();
-        
-        ctx.save();
-        ctx.font = "bold 8px JetBrains Mono,monospace";
-        ctx.fillStyle = color;
-        ctx.shadowColor = "rgba(0,0,0,0.8)";
-        ctx.shadowBlur = 4;
-        const label = isBuySide ? "▲ LIQUIDITY" : "▼ LIQUIDITY";
-        ctx.fillText(label, w * 0.71, y - 4);
-        ctx.restore();
-      }
-    });
-  }
-  
-  // ─── 5. DRAW SUPPORT / RESISTANCE ZONES ──────────────────────────────────
-  r.zones.forEach(zone => {
-    const y = py(zone.level);
-    
-    const zoneHeight = 16;
-    const gradient = ctx.createLinearGradient(0, y - zoneHeight/2, 0, y + zoneHeight/2);
-    if (zone.type === "resistance") {
-      gradient.addColorStop(0, 'rgba(255,56,56,0.25)');
-      gradient.addColorStop(0.5, 'rgba(255,56,56,0.05)');
-      gradient.addColorStop(1, 'rgba(255,56,56,0)');
-    } else {
-      gradient.addColorStop(0, 'rgba(0,229,255,0)');
-      gradient.addColorStop(0.5, 'rgba(0,229,255,0.05)');
-      gradient.addColorStop(1, 'rgba(0,229,255,0.25)');
-    }
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, y - zoneHeight/2, w, zoneHeight);
-    
-    ctx.save();
-    ctx.setLineDash([5, 4]);
-    ctx.strokeStyle = zone.type === "resistance" ? "rgba(255,56,56,0.7)" : "rgba(0,229,255,0.7)";
-    ctx.lineWidth = 1.5;
-    ctx.shadowColor = zone.type === "resistance" ? "#ff3838" : "#00e5ff";
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.restore();
-    
-    ctx.font = "bold 9px JetBrains Mono,monospace";
-    ctx.fillStyle = zone.type === "resistance" ? "rgba(255,100,100,0.9)" : "rgba(0,229,255,0.9)";
-    ctx.shadowColor = "rgba(0,0,0,0.8)";
-    ctx.shadowBlur = 4;
-    ctx.fillText(`${zone.type.toUpperCase()} ${zone.level.toFixed(2)}`, 6, y - 6);
-    ctx.shadowBlur = 0;
-  });
-  
-  // ─── 6. DRAW PATTERN ICONS ──────────────────────────────────────────────
-  const patternColors = ["#ff6b6b", "#ffd93d", "#6bcb77", "#4d96ff", "#ff6bff", "#ff9f43"];
-  let patternY = 20;
-  
-  if (r.patterns && r.patterns.length > 0) {
-    ctx.font = "bold 8px JetBrains Mono,monospace";
-    r.patterns.forEach((pattern, index) => {
-      const color = patternColors[index % patternColors.length];
-      const patternX = w - 140;
-      
-      const drawY = patternY - 10;
-      if (pattern.includes("Double Bottom")) {
-        drawDoubleBottom(ctx, patternX, drawY, 80, 40);
-      } else if (pattern.includes("Head & Shoulders")) {
-        drawHeadAndShoulders(ctx, patternX, drawY, 80, 40);
-      } else if (pattern.includes("Bull Flag")) {
-        drawFlag(ctx, patternX, drawY, 80, 40, true);
-      } else if (pattern.includes("Bear Flag")) {
-        drawFlag(ctx, patternX, drawY, 80, 40, false);
-      } else if (pattern.includes("Engulfing")) {
-        drawEngulfing(ctx, patternX, drawY, 80, 40);
-      } else if (pattern.includes("Doji")) {
-        drawDoji(ctx, patternX, drawY, 80, 40);
-      } else if (pattern.includes("Hammer")) {
-        drawHammer(ctx, patternX, drawY, 80, 40);
-      } else if (pattern.includes("Shooting Star")) {
-        drawShootingStar(ctx, patternX, drawY, 80, 40);
-      } else if (pattern.includes("Triangle") || pattern.includes("Wedge")) {
-        drawTriangle(ctx, patternX, drawY, 80, 40);
-      }
-      
-      ctx.font = "bold 8px JetBrains Mono,monospace";
-      ctx.fillStyle = color;
-      ctx.shadowColor = "rgba(0,0,0,0.9)";
-      ctx.shadowBlur = 6;
-      ctx.fillText(`• ${pattern}`, 4, patternY + 8);
-      ctx.shadowBlur = 0;
-      
-      patternY += 30;
-    });
-    ctx.shadowBlur = 0;
-  }
-  
-  // ─── 7. DRAW ENTRY, SL, TP LEVELS ──────────────────────────────────────
-  const drawLevel = (price: number, label: string, color: string, dashed: boolean = false) => {
-    const y = py(price);
-    
-    ctx.save();
-    if (dashed) {
-      ctx.setLineDash([4, 4]);
-    }
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.moveTo(w * 0.62, y);
-    ctx.lineTo(w - 4, y);
-    ctx.stroke();
-    ctx.restore();
-    
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(w * 0.62, y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
-    ctx.fill();
-    ctx.restore();
-    
-    ctx.font = "bold 9px JetBrains Mono,monospace";
-    ctx.fillStyle = color;
-    ctx.shadowColor = "rgba(0,0,0,0.9)";
-    ctx.shadowBlur = 4;
-    ctx.fillText(label, w * 0.635, y - 4);
-    ctx.shadowBlur = 0;
-  };
-  
-  drawLevel(r.entry, "ENTRY", "#ffffff");
-  drawLevel(r.sl, "SL", "#ff3838", true);
-  drawLevel(r.tp1, "TP1", "#39ff14");
-  drawLevel(r.tp2, "TP2", "#00e5ff");
-  drawLevel(r.tp3, "TP3", "#ffc107");
-  
-  // ─── 8. DRAW DIRECTION ARROW ────────────────────────────────────────────
-  const aX = w * 0.55, aY = py(r.entry);
-  const aColor = r.direction === "BUY" ? "#39ff14" : r.direction === "SELL" ? "#ff3838" : "#ffc107";
-  const aSize = 20;
-  
-  ctx.save();
-  ctx.fillStyle = aColor;
-  ctx.shadowColor = aColor;
-  ctx.shadowBlur = 15;
-  ctx.beginPath();
-  if (r.direction === "BUY") {
-    ctx.moveTo(aX, aY - aSize);
-    ctx.lineTo(aX + aSize * 0.6, aY + aSize * 0.3);
-    ctx.lineTo(aX - aSize * 0.6, aY + aSize * 0.3);
-  } else if (r.direction === "SELL") {
-    ctx.moveTo(aX, aY + aSize);
-    ctx.lineTo(aX + aSize * 0.6, aY - aSize * 0.3);
-    ctx.lineTo(aX - aSize * 0.6, aY - aSize * 0.3);
-  } else {
-    ctx.arc(aX, aY, aSize * 0.4, 0, Math.PI * 2);
-  }
-  ctx.closePath();
-  ctx.fill();
-  
-  ctx.font = "bold 10px JetBrains Mono,monospace";
-  ctx.fillStyle = "#ffffff";
-  ctx.shadowColor = "rgba(0,0,0,0.9)";
-  ctx.shadowBlur = 8;
-  const dirLabel = r.direction === "BUY" ? "BUY" : r.direction === "SELL" ? "SELL" : "NO TRADE";
-  ctx.fillText(dirLabel, aX - 15, aY - aSize - 12);
-  ctx.shadowBlur = 0;
-  ctx.restore();
-  
-  // ─── 9. DRAW MARKET STRUCTURE LABEL ─────────────────────────────────────
-  if (r.smcData?.marketStructure) {
-    const msX = w * 0.02, msY = h * 0.06;
-    ctx.save();
-    const msColor = r.smcData.marketStructure === "BULLISH" ? "#39ff14" : 
-                    r.smcData.marketStructure === "BEARISH" ? "#ff3838" : "#ffc107";
-    ctx.fillStyle = msColor;
-    ctx.shadowColor = msColor;
-    ctx.shadowBlur = 15;
-    ctx.font = "bold 11px JetBrains Mono,monospace";
-    const msLabel = r.smcData.marketStructure === "BULLISH" ? "▲ BULLISH STRUCTURE" :
-                    r.smcData.marketStructure === "BEARISH" ? "▼ BEARISH STRUCTURE" : "— NEUTRAL STRUCTURE";
-    ctx.fillText(msLabel, msX, msY);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-  }
-  
-  // ─── 10. DRAW TRADE STYLE LABEL ─────────────────────────────────────────
-  const tsX = w * 0.02, tsY = h * 0.12;
-  ctx.save();
-  const tsColor = r.tradeStyle === "SCALP" ? "#39ff14" : "#ffc107";
-  ctx.fillStyle = tsColor;
-  ctx.shadowColor = tsColor;
-  ctx.shadowBlur = 10;
-  ctx.font = "bold 10px JetBrains Mono,monospace";
-  ctx.fillText(`${r.tradeStyle} MODE`, tsX, tsY);
-  ctx.shadowBlur = 0;
-  ctx.restore();
-  
-  // ─── 11. DRAW CONFIDENCE METER ──────────────────────────────────────────
-  const meterX = w * 0.02, meterY = h * 0.92, meterW = 120, meterH = 6;
-  ctx.save();
-  ctx.fillStyle = "rgba(255,255,255,0.1)";
-  ctx.roundRect(meterX, meterY, meterW, meterH, 3);
-  ctx.fill();
-  
-  const confColor = r.confidence >= 70 ? "#39ff14" : r.confidence >= 50 ? "#ffc107" : "#ff3838";
-  ctx.fillStyle = confColor;
-  ctx.shadowColor = confColor;
-  ctx.shadowBlur = 10;
-  ctx.roundRect(meterX, meterY, (r.confidence / 100) * meterW, meterH, 3);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  
-  ctx.font = "bold 8px JetBrains Mono,monospace";
-  ctx.fillStyle = confColor;
-  ctx.fillText(`CONFIDENCE ${r.confidence}%`, meterX, meterY - 4);
-  ctx.restore();
-  
-  // ─── 12. DRAW RISK/REWARD LABEL ─────────────────────────────────────────
-  const rrX = w * 0.02, rrY = h * 0.85;
-  ctx.save();
-  ctx.font = "bold 9px JetBrains Mono,monospace";
-  ctx.fillStyle = r.riskReward >= 1.5 ? "#39ff14" : "#ffc107";
-  ctx.shadowColor = "rgba(0,0,0,0.9)";
-  ctx.shadowBlur = 4;
-  ctx.fillText(`R:R 1:${r.riskReward}`, rrX, rrY);
-  ctx.shadowBlur = 0;
-  ctx.restore();
-}
+const AI_MODELS = [
+  { id: "gpt4o", name: "GPT-4o", provider: "OpenAI", color: "#10b981", pro: false },
+  { id: "gemini", name: "Gemini 1.5 Pro", provider: "Google", color: "#4285f4", pro: false },
+  { id: "claude", name: "Claude 3.5 Sonnet", provider: "Anthropic", color: "#c8a96e", pro: true },
+  { id: "grok", name: "Grok-2", provider: "xAI", color: "#a855f7", pro: true },
+  { id: "llama", name: "Llama 3.1 405B", provider: "Meta", color: "#3b82f6", pro: true },
+  { id: "mistral", name: "Mistral Large", provider: "Mistral AI", color: "#f97316", pro: true },
+];
 
 // ─── Analysis simulator (fallback) ─────────────────────────────────────────
 
@@ -605,7 +99,7 @@ function generateAnalysis(modelId: string, tradeStyle: TradeStyle = "SCALP"): An
         : "NO TRADE";
   const entry = base + (Math.random() - 0.5) * pip * 20;
   
-  const slMultiplier = tradeStyle === "SCALP" ? 1.0 : 3.0;
+  const slMultiplier = tradeStyle === "SCALP" ? 0.3 : 1.0;
   const sl = direction === "BUY" ? entry - spread * slMultiplier : entry + spread * slMultiplier;
   const slDist = Math.abs(entry - sl);
   
@@ -654,33 +148,201 @@ function generateAnalysis(modelId: string, tradeStyle: TradeStyle = "SCALP"): An
       indicatorConfluence,
       supportResistance
     },
-    smcData: {
-      marketStructure: trend,
-      bos: Math.random() > 0.5 ? "Break of Structure detected: YES" : "Break of Structure detected: NO",
-      choch: Math.random() > 0.5 ? "Change of Character detected: YES" : "Change of Character detected: NO",
-      orderBlocks: [
-        `${trend === "BULLISH" ? "Bullish" : "Bearish"} Order Block at ${(entry + spread * 2).toFixed(4)}`
-      ],
-      fvgs: [`FVG at ${(entry - spread * 1.5).toFixed(4)}-${(entry + spread * 1.5).toFixed(4)}`],
-      liquidity: [
-        `Buy-side liquidity at ${(entry + spread * 5).toFixed(4)}`,
-        `Sell-side liquidity at ${(entry - spread * 5).toFixed(4)}`
-      ],
-      supplyDemandZones: [
-        { type: "supply", level: entry + spread * 4, strength: "moderate" },
-        { type: "demand", level: entry - spread * 4, strength: "strong" }
-      ],
-      trendline: {
-        type: trend === "BULLISH" ? "ascending" : trend === "BEARISH" ? "descending" : "horizontal",
-        points: [entry.toFixed(4), (entry + spread * 2).toFixed(4), (entry + spread * 4).toFixed(4)]
-      }
-    }
+    verdictSummary: "Simulated analysis - upgrade to premium for AI execution",
+    marketStructure: trend
   };
 }
 
 function fmt(price: number, pair: string): string {
   return ["JPY", "NAS", "US30", "XAU", "BTC"].some(k => pair.includes(k))
     ? price.toFixed(2) : price.toFixed(5);
+}
+
+// ─── Canvas overlay ───────────────────────────────────────────────────────────
+
+function drawOverlay(canvas: HTMLCanvasElement, r: AnalysisResult) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  
+  const prices = [r.sl, r.entry, r.tp1, r.tp2, r.tp3, ...r.zones.map(z => z.level)];
+  const minP = Math.min(...prices) * 0.9993;
+  const maxP = Math.max(...prices) * 1.0007;
+  const py = (p: number) => h - ((p - minP) / (maxP - minP)) * h * 0.82 - h * 0.09;
+  
+  // ─── DRAW SUPPORT / RESISTANCE ZONES ──────────────────────────────────
+  r.zones.forEach(zone => {
+    const y = py(zone.level);
+    
+    const zoneHeight = 16;
+    const gradient = ctx.createLinearGradient(0, y - zoneHeight/2, 0, y + zoneHeight/2);
+    if (zone.type === "resistance") {
+      gradient.addColorStop(0, 'rgba(255,56,56,0.25)');
+      gradient.addColorStop(0.5, 'rgba(255,56,56,0.05)');
+      gradient.addColorStop(1, 'rgba(255,56,56,0)');
+    } else {
+      gradient.addColorStop(0, 'rgba(0,229,255,0)');
+      gradient.addColorStop(0.5, 'rgba(0,229,255,0.05)');
+      gradient.addColorStop(1, 'rgba(0,229,255,0.25)');
+    }
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, y - zoneHeight/2, w, zoneHeight);
+    
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = zone.type === "resistance" ? "rgba(255,56,56,0.7)" : "rgba(0,229,255,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = zone.type === "resistance" ? "#ff3838" : "#00e5ff";
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.restore();
+    
+    ctx.font = "bold 9px JetBrains Mono,monospace";
+    ctx.fillStyle = zone.type === "resistance" ? "rgba(255,100,100,0.9)" : "rgba(0,229,255,0.9)";
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 4;
+    ctx.fillText(`${zone.type.toUpperCase()} ${zone.level.toFixed(2)}`, 6, y - 6);
+    ctx.shadowBlur = 0;
+  });
+  
+  // ─── DRAW ENTRY, SL, TP LEVELS ──────────────────────────────────────
+  const drawLevel = (price: number, label: string, color: string, dashed: boolean = false) => {
+    const y = py(price);
+    
+    ctx.save();
+    if (dashed) {
+      ctx.setLineDash([4, 4]);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.62, y);
+    ctx.lineTo(w - 4, y);
+    ctx.stroke();
+    ctx.restore();
+    
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(w * 0.62, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.restore();
+    
+    ctx.font = "bold 9px JetBrains Mono,monospace";
+    ctx.fillStyle = color;
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 4;
+    ctx.fillText(label, w * 0.635, y - 4);
+    ctx.shadowBlur = 0;
+  };
+  
+  drawLevel(r.entry, "ENTRY", "#ffffff");
+  drawLevel(r.sl, "SL", "#ff3838", true);
+  drawLevel(r.tp1, "TP1", "#39ff14");
+  drawLevel(r.tp2, "TP2", "#00e5ff");
+  drawLevel(r.tp3, "TP3", "#ffc107");
+  
+  // ─── DRAW DIRECTION ARROW ────────────────────────────────────────────
+  const aX = w * 0.55, aY = py(r.entry);
+  const aColor = r.direction === "BUY" ? "#39ff14" : r.direction === "SELL" ? "#ff3838" : "#ffc107";
+  const aSize = 20;
+  
+  ctx.save();
+  ctx.fillStyle = aColor;
+  ctx.shadowColor = aColor;
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  if (r.direction === "BUY") {
+    ctx.moveTo(aX, aY - aSize);
+    ctx.lineTo(aX + aSize * 0.6, aY + aSize * 0.3);
+    ctx.lineTo(aX - aSize * 0.6, aY + aSize * 0.3);
+  } else if (r.direction === "SELL") {
+    ctx.moveTo(aX, aY + aSize);
+    ctx.lineTo(aX + aSize * 0.6, aY - aSize * 0.3);
+    ctx.lineTo(aX - aSize * 0.6, aY - aSize * 0.3);
+  } else {
+    ctx.arc(aX, aY, aSize * 0.4, 0, Math.PI * 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+  
+  ctx.font = "bold 10px JetBrains Mono,monospace";
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowColor = "rgba(0,0,0,0.9)";
+  ctx.shadowBlur = 8;
+  const dirLabel = r.direction === "BUY" ? "BUY" : r.direction === "SELL" ? "SELL" : "NO TRADE";
+  ctx.fillText(dirLabel, aX - 15, aY - aSize - 12);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  
+  // ─── DRAW VERDICT SUMMARY ─────────────────────────────────────────────
+  if (r.verdictSummary) {
+    const vx = w * 0.02, vy = h * 0.06;
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.shadowColor = "rgba(0,0,0,0.9)";
+    ctx.shadowBlur = 8;
+    ctx.font = "bold 10px JetBrains Mono,monospace";
+    const lines = r.verdictSummary.split(' ');
+    const maxLineLength = 40;
+    let currentLine = '';
+    let lineY = vy;
+    
+    lines.forEach((word, index) => {
+      if ((currentLine + ' ' + word).length > maxLineLength) {
+        ctx.fillText(currentLine, vx, lineY);
+        lineY += 16;
+        currentLine = word;
+      } else {
+        currentLine += (currentLine ? ' ' : '') + word;
+      }
+      if (index === lines.length - 1) {
+        ctx.fillText(currentLine, vx, lineY);
+      }
+    });
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+  
+  // ─── DRAW CONFIDENCE METER ──────────────────────────────────────────
+  const meterX = w * 0.02, meterY = h * 0.92, meterW = 120, meterH = 6;
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.1)";
+  ctx.roundRect(meterX, meterY, meterW, meterH, 3);
+  ctx.fill();
+  
+  const confColor = r.confidence >= 70 ? "#39ff14" : r.confidence >= 50 ? "#ffc107" : "#ff3838";
+  ctx.fillStyle = confColor;
+  ctx.shadowColor = confColor;
+  ctx.shadowBlur = 10;
+  ctx.roundRect(meterX, meterY, (r.confidence / 100) * meterW, meterH, 3);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  
+  ctx.font = "bold 8px JetBrains Mono,monospace";
+  ctx.fillStyle = confColor;
+  ctx.fillText(`CONFIDENCE ${r.confidence}%`, meterX, meterY - 4);
+  ctx.restore();
+  
+  // ─── DRAW RISK/REWARD LABEL ─────────────────────────────────────────
+  const rrX = w * 0.02, rrY = h * 0.85;
+  ctx.save();
+  ctx.font = "bold 9px JetBrains Mono,monospace";
+  ctx.fillStyle = r.riskReward >= 1.5 ? "#39ff14" : "#ffc107";
+  ctx.shadowColor = "rgba(0,0,0,0.9)";
+  ctx.shadowBlur = 4;
+  ctx.fillText(`R:R 1:${r.riskReward}`, rrX, rrY);
+  ctx.shadowBlur = 0;
+  ctx.restore();
 }
 
 // ─── Payment Modal ────────────────────────────────────────────────────────────
@@ -1057,59 +719,74 @@ export default function Scanner() {
       if (aiResult && !aiResult.error) {
         console.log('✅ Using GitHub AI result:', aiResult);
         
+        // Map the new JSON structure to your existing AnalysisResult type
         const zones = [];
-        if (aiResult.support) {
-          zones.push({ type: "support" as const, level: aiResult.support });
-        }
-        if (aiResult.resistance) {
-          zones.push({ type: "resistance" as const, level: aiResult.resistance });
+        if (aiResult.execution) {
+          const slLevel = aiResult.execution.stop_loss || 0;
+          const entryLevel = aiResult.execution.entry || 0;
+          const tp1Level = aiResult.execution.tp_1 || 0;
+          const tp2Level = aiResult.execution.tp_2 || 0;
+          const tp3Level = aiResult.execution.tp_3 || 0;
+          
+          if (slLevel && slLevel !== entryLevel) {
+            zones.push({ type: slLevel < entryLevel ? "support" as const : "resistance" as const, level: slLevel });
+          }
+          if (tp1Level && tp1Level !== entryLevel) {
+            zones.push({ type: tp1Level > entryLevel ? "resistance" as const : "support" as const, level: tp1Level });
+          }
+          if (tp2Level && tp2Level !== entryLevel) {
+            zones.push({ type: tp2Level > entryLevel ? "resistance" as const : "support" as const, level: tp2Level });
+          }
+          if (tp3Level && tp3Level !== entryLevel) {
+            zones.push({ type: tp3Level > entryLevel ? "resistance" as const : "support" as const, level: tp3Level });
+          }
         }
         
-        const detectedSymbol = aiResult.symbol || selectedPair || "EUR/USD";
+        const detectedSymbol = aiResult.instrument || selectedPair || "EUR/USD";
         const detectedTimeframe = aiResult.timeframe || selectedTF || "H1";
+        const decision = aiResult.decision || "NO TRADE";
+        const direction: TradeDirection = decision === "BUY" ? "BUY" : decision === "SELL" ? "SELL" : "NO TRADE";
+        const trend = aiResult.market_structure?.includes("Bullish") ? "BULLISH" : 
+                      aiResult.market_structure?.includes("Bearish") ? "BEARISH" : "NEUTRAL";
         
-        const scoreComponents = aiResult.scoreComponents || {
-          trendStructure: Math.min(30, Math.round((aiResult.confidence || 50) * 0.35) + 5),
-          chartPatterns: Math.min(25, Math.round((aiResult.confidence || 50) * 0.25) + 5),
-          indicatorConfluence: Math.min(25, Math.round((aiResult.confidence || 50) * 0.25) + 5),
-          supportResistance: Math.min(20, Math.round((aiResult.confidence || 50) * 0.15) + 5)
+        const confidence = aiResult.confidence_percentage || 50;
+        const scoreComponents = {
+          trendStructure: Math.min(30, Math.round((confidence * 0.35) + 5)),
+          chartPatterns: Math.min(25, Math.round((confidence * 0.25) + 5)),
+          indicatorConfluence: Math.min(25, Math.round((confidence * 0.25) + 5)),
+          supportResistance: Math.min(20, Math.round((confidence * 0.15) + 5))
         };
         
+        const rrMatch = aiResult.execution?.risk_reward_ratio?.match(/(\d+\.?\d*)/);
+        const riskReward = rrMatch ? parseFloat(rrMatch[0]) : 2;
+        
         analysis = {
-          direction: aiResult.direction || "NO TRADE",
-          trend: aiResult.trend || "NEUTRAL",
-          confidence: aiResult.confidence || 50,
-          entry: aiResult.entry || 0,
-          sl: aiResult.sl || 0,
-          tp1: aiResult.tp1 || 0,
-          tp2: aiResult.tp2 || 0,
-          tp3: aiResult.tp3 || 0,
-          patterns: aiResult.patterns || [],
+          direction: direction,
+          trend: trend as TrendType,
+          confidence: confidence,
+          entry: aiResult.execution?.entry || 0,
+          sl: aiResult.execution?.stop_loss || 0,
+          tp1: aiResult.execution?.tp_1 || 0,
+          tp2: aiResult.execution?.tp_2 || 0,
+          tp3: aiResult.execution?.tp_3 || 0,
+          patterns: aiResult.detected_patterns || [],
           zones: zones.length > 0 ? zones : [
-            { type: "support" as const, level: aiResult.support || 0 },
-            { type: "resistance" as const, level: aiResult.resistance || 0 },
+            { type: "support" as const, level: (aiResult.execution?.entry || 0) - 10 },
+            { type: "resistance" as const, level: (aiResult.execution?.entry || 0) + 10 },
           ],
-          breakout: aiResult.breakout || false,
-          fakeoutRisk: aiResult.fakeoutRisk || false,
+          breakout: aiResult.detected_patterns?.some((p: string) => p.includes("Breakout")) || false,
+          fakeoutRisk: aiResult.detected_patterns?.some((p: string) => p.includes("Fakeout")) || false,
           trendStrength: scoreComponents.trendStructure,
           patternScore: scoreComponents.chartPatterns,
           volumeScore: scoreComponents.indicatorConfluence,
           timeframe: detectedTimeframe,
           pair: detectedSymbol,
-          riskReward: aiResult.riskReward || 2,
+          riskReward: riskReward,
           model: selectedModel,
           tradeStyle: selectedTradeStyle,
           scoreComponents: scoreComponents,
-          smcData: aiResult.smcData || {
-            marketStructure: "NEUTRAL",
-            bos: "Not detected",
-            choch: "Not detected",
-            orderBlocks: [],
-            fvgs: [],
-            liquidity: [],
-            supplyDemandZones: [],
-            trendline: { type: "horizontal", points: ["0"] }
-          }
+          verdictSummary: aiResult.verdict_summary || "Analysis complete",
+          marketStructure: aiResult.market_structure || "NEUTRAL"
         };
       } else {
         console.log('🔄 Using fallback simulation');
@@ -1338,8 +1015,8 @@ export default function Scanner() {
             </div>
             <p className="text-[8px] mt-1.5" style={{ color: "#4a6a80" }}>
               {selectedTradeStyle === "SCALP" 
-                ? "Short-term trades (M1-M15). Tighter stops, quicker exits." 
-                : "Long-term trades (H1-D1). Wider stops, larger targets."}
+                ? "Aggressive micro-confluence hunting on lower timeframes" 
+                : "Macroscopic structural pullbacks to premium/discount zones"}
             </p>
           </div>
 
@@ -1582,10 +1259,13 @@ export default function Scanner() {
                 <div>
                   <SectionLabel icon={<Wifi size={9} />} text="AI VERDICT" />
                   <p className="mt-2 text-[10px] leading-relaxed" style={{ color: "#7a9ab5" }}>
-                    {result.direction === "BUY" && <>Strong bullish confluence via <span style={{ color: "#00e5ff" }}>{result.patterns[0]}</span>. Entry near key support. 1:{result.riskReward} R:R.</>}
-                    {result.direction === "SELL" && <>Bearish structure confirmed. <span style={{ color: "#00e5ff" }}>{result.patterns[0]}</span> rejection from supply zone. Manage risk above swing high.</>}
-                    {result.direction === "NO TRADE" && <>Mixed signals detected. Wait for higher-TF confirmation. <span style={{ color: "#ffc107" }}>Confidence below threshold.</span></>}
+                    {result.verdictSummary || "Analysis complete"}
                   </p>
+                  {result.marketStructure && (
+                    <div className="mt-2 text-[9px]" style={{ color: "#4a6a80" }}>
+                      Structure: {result.marketStructure}
+                    </div>
+                  )}
                   {result.fakeoutRisk && (
                     <div className="mt-3 flex items-start gap-1.5 text-[9px] px-2 py-1.5 rounded"
                       style={{ background: "rgba(255,193,7,0.07)", border: "1px solid rgba(255,193,7,0.2)", color: "#ffc107" }}>
@@ -1646,10 +1326,6 @@ export default function Scanner() {
                         <span style={{ color: result.confidence >= 70 ? "#39ff14" : result.confidence >= 50 ? "#ffc107" : "#ff3838" }}>
                           {result.confidence}% {result.confidence === 97 && "⭐"}
                         </span>
-                      </div>
-                      <div className="text-[8px] mt-0.5" style={{ color: "#4a6a80" }}>
-                        {result.confidence === 97 && "Capped at 97% to avoid overconfidence"}
-                        {result.riskReward < 1.5 && "⚠️ Risk/Reward below 1:1.5 - No trade taken"}
                       </div>
                     </div>
                   </div>
