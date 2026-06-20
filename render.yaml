@@ -1,0 +1,13 @@
+# render.yaml
+services:
+  - type: web
+    name: chartscanner
+    env: node
+    buildCommand: pnpm install && pnpm build
+    startCommand: node server.js
+    envVars:
+      - key: VITE_GITHUB_TOKEN
+        sync: false
+      - key: VITE_NVIDIA_API_KEY
+        sync: false
+    staticPublishPath: dist
